@@ -1,38 +1,43 @@
-"""Painel web + API do bot Quotex.
+"""API + servidor do painel.
 
-    python -m app.main   →  http://localhost:8000
+    python -m app.main  →  http://localhost:8000
+
+Auth: login local simples (BOT_PASSWORD env ou 'devin' por defeito) → token em memória.
 """
 
-import asyncio
-import logging
+import secrets
+import os
+import time
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import history
+from .analytics import market_analysis
+from .backtest import run_backtest
+from .broker import ASSETS
 from .engine import engine
+from .knowledge import KNOWLEDGE
+from .risk import risk
 from .strategies import STRATEGIES
 
+import logging
 logging.basicConfig(level=logging.INFO)
-app = FastAPI(title="Quotex Bot")
+
+app = FastAPI(title="Quotex Trading Platform")
 STATIC = Path(__file__).resolve().parent.parent / "static"
 
-
-class LoginReq(BaseModel):
-    email: str | None = None
-    password: str | None = None
-    ssid: str | None = None
-    account: str = "PRACTICE"
+BOT_PASSWORD = os.getenv("BOT_PASSWORD", "devin")
+TOKENS = set()
 
 
-class StartReq(BaseModel):
-    asset: str
-    amount: float
-    expiry: int            # segundos (60, 120, 300...)
-    strategy: str
+def auth(req: Request):
+    tok = req.headers.get("x-token") or req.query_params.get("token")
+    if tok not in TOKENS:
+        raise HTTPException(401, "não autenticado")
 
 
 @app.get("/")
@@ -40,53 +45,144 @@ def index():
     return FileResponse(STATIC / "index.html")
 
 
-@app.post("/api/login")
-async def login(req: LoginReq):
-    ok, msg = await engine.connect(email=req.email, password=req.password, ssid=req.ssid)
-    if ok:
-        await engine.set_account(req.account)
-        await engine.balance()
-    return {"ok": ok, "msg": str(msg), "balance": engine.state.get("balance")}
+class LoginBody(BaseModel):
+    password: str
 
 
-@app.post("/api/account/{mode}")
-async def account(mode: str):
+@app.post("/api/auth/login")
+def login(b: LoginBody):
+    if b.password != BOT_PASSWORD:
+        raise HTTPException(401, "password errada")
+    tok = secrets.token_hex(16)
+    TOKENS.add(tok)
+    return {"token": tok}
+
+
+class BrokerLogin(BaseModel):
+    email: str | None = None
+    password: str | None = None
+    ssid: str | None = None
+    account: str = "REAL"
+
+
+@app.post("/api/broker/connect")
+async def broker_connect(b: BrokerLogin, _=Depends(auth)):
+    ok, msg = await engine.connect_real(b.email, b.password, b.ssid, b.account)
+    return {"ok": ok, "msg": str(msg), "balance": await engine.balance()}
+
+
+@app.post("/api/broker/account/{mode}")
+async def broker_account(mode: str, _=Depends(auth)):
     await engine.set_account(mode.upper())
-    await engine.balance()
-    return {"ok": True, "balance": engine.state.get("balance")}
-
-
-@app.get("/api/strategies")
-def strategies():
-    return {k: {"name": v["name"], "params": v["params"]} for k, v in STRATEGIES.items()}
-
-
-@app.post("/api/start")
-async def start(req: StartReq):
-    if req.strategy not in STRATEGIES:
-        return {"ok": False, "msg": "Estratégia desconhecida"}
-    ok = engine.start(req.dict())
-    return {"ok": ok}
-
-
-@app.post("/api/stop")
-async def stop():
-    engine.stop()
-    return {"ok": True}
+    return {"ok": True, "balance": await engine.balance()}
 
 
 @app.get("/api/status")
-def status():
-    return engine.status()
+async def status(_=Depends(auth)):
+    st = engine.status()
+    st["balance"] = await engine.balance()
+    return st
 
 
-@app.get("/api/history")
-def get_history():
-    return {"trades": history.list_trades(), "stats": history.stats()}
+@app.get("/api/assets")
+def assets(_=Depends(auth)):
+    return list(ASSETS.keys())
+
+
+@app.get("/api/strategies")
+def strategies(_=Depends(auth)):
+    return {k: {"name": v["name"], "desc": v["desc"]} for k, v in STRATEGIES.items()}
+
+
+class ManualTrade(BaseModel):
+    asset: str
+    amount: float
+    expiry: int
+    direction: str
+    strategy: str = "manual"
+
+
+@app.post("/api/trades")
+async def trade(b: ManualTrade, _=Depends(auth)):
+    if b.direction not in ("call", "put"):
+        raise HTTPException(400, "direction inválida")
+    try:
+        t = await engine.manual_trade(b.asset, b.amount, b.expiry, b.direction, b.strategy)
+    except RuntimeError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "trade": t}
+
+
+@app.get("/api/trades")
+def trades(asset: str | None = None, strategy: str | None = None,
+           result: str | None = None, days: int | None = None, _=Depends(auth)):
+    return history.list_trades(asset, strategy, result, days)
+
+
+@app.get("/api/history/stats")
+def stats(_=Depends(auth)):
+    return {"by_strategy": history.stats_by_strategy(),
+            "today": history.summary(days=1), "all": history.summary()}
+
+
+class AutoCfg(BaseModel):
+    asset: str = "EURUSD"
+    amount: float = 10
+    expiry: int = 300
+    strategy: str = "ai_ensemble"
+    min_confidence: int = 55
+
+
+@app.post("/api/autobot/start")
+def ab_start(cfg: AutoCfg, _=Depends(auth)):
+    engine.autobot_start(cfg.dict())
+    return {"ok": True}
+
+
+@app.post("/api/autobot/stop")
+def ab_stop(_=Depends(auth)):
+    engine.autobot_stop()
+    return {"ok": True}
+
+
+@app.post("/api/risk")
+def set_risk(cfg: dict, _=Depends(auth)):
+    return {"ok": True, "config": risk.configure(**cfg)}
+
+
+@app.post("/api/risk/resume")
+def risk_resume(_=Depends(auth)):
+    risk.resume()
+    return {"ok": True}
+
+
+@app.get("/api/analysis/{asset}")
+async def analysis(asset: str, _=Depends(auth)):
+    candles = await engine.broker.get_candles(asset, 60, 120)
+    if not candles:
+        return {"error": "sem dados"}
+    return market_analysis(candles)
+
+
+class BacktestReq(BaseModel):
+    strategy: str
+    asset: str = "EURUSD"
+    n_candles: int = 500
+    amount: float = 10
+    expiry_candles: int = 5
+
+
+@app.post("/api/backtest")
+def backtest(b: BacktestReq, _=Depends(auth)):
+    return run_backtest(b.strategy, b.asset, b.n_candles, 60, b.amount, b.expiry_candles)
+
+
+@app.get("/api/knowledge")
+def knowledge(_=Depends(auth)):
+    return KNOWLEDGE
 
 
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
-
 
 if __name__ == "__main__":
     import uvicorn

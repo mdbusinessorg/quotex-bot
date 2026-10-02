@@ -1,246 +1,270 @@
-"""Biblioteca de estratégias — 15 setups clássicos da literatura de análise técnica
-(Trend Following / Covel, Wilder "New Concepts", Bollinger, George Lane, Nison
-"Japanese Candlestick Charting", Elder, Price Action).
+"""Strategy Engine — 15 estratégias modulares.
 
-Cada estratégia recebe `candles` (lista ordenada antiga->nova de dicts
-{"open","high","low","close","time"}) e devolve "call", "put" ou None.
-
-O sinal deve ser avaliado no fecho da vela (última vela completa).
+Cada estratégia recebe `candles` (antiga->nova) e devolve:
+    {"signal": "call"|"put"|None, "confidence": 0-100,
+     "reasons": [...], "risk": "LOW"|"MEDIUM"|"HIGH"}
 """
 
 from . import indicators as I
 
 
-def s_trend_sma_cross(c, p):
-    """Trend Following: cruzamento SMA rápida/lenta. Call quando rápida cruza acima."""
-    closes = [x["close"] for x in c]
-    fast_s = I.sma_series(closes, p["fast"])
-    slow_s = I.sma_series(closes, p["slow"])
-    if len(fast_s) < 2 or fast_s[-2] is None or slow_s[-2] is None:
-        return None
-    if fast_s[-2] <= slow_s[-2] and fast_s[-1] > slow_s[-1]:
-        return "call"
-    if fast_s[-2] >= slow_s[-2] and fast_s[-1] < slow_s[-1]:
-        return "put"
-    return None
+def _res(sig, conf, reasons, risk="MEDIUM"):
+    return {"signal": sig, "confidence": conf, "reasons": reasons, "risk": risk}
+
+NO = _res(None, 0, [])
 
 
-def s_ema_cross(c, p):
-    closes = [x["close"] for x in c]
-    f = I.ema_series(closes, p["fast"])
-    s = I.ema_series(closes, p["slow"])
+def closes(c):
+    return [x["close"] for x in c]
+
+
+# 1. Trend Following (Covel)
+def s_trend_following(c):
+    cl = closes(c)
+    f = I.sma(cl, 20); s = I.sma(cl, 50)
+    if f is None or s is None:
+        return NO
+    if f > s and I.is_bull(c[-1]):
+        return _res("call", 60, ["SMA20 acima de SMA50", "vela bullish em tendência"], "LOW")
+    if f < s and I.is_bear(c[-1]):
+        return _res("put", 60, ["SMA20 abaixo de SMA50", "vela bearish em tendência"], "LOW")
+    return NO
+
+
+# 2. Moving Average Cross
+def s_ma_cross(c):
+    f = I.sma_series(closes(c), 9); s = I.sma_series(closes(c), 21)
     if len(f) < 2 or f[-2] is None or s[-2] is None:
-        return None
+        return NO
     if f[-2] <= s[-2] and f[-1] > s[-1]:
-        return "call"
+        return _res("call", 65, ["cruzamento SMA9 > SMA21"])
     if f[-2] >= s[-2] and f[-1] < s[-1]:
-        return "put"
-    return None
+        return _res("put", 65, ["cruzamento SMA9 < SMA21"])
+    return NO
 
 
-def s_rsi_reversal(c, p):
-    """Wilder RSI: reversão à média — compra em sobrevenda, venda em sobrecompra."""
-    r = I.rsi([x["close"] for x in c], p["period"])
+# 3. RSI Momentum (Wilder)
+def s_rsi_momentum(c):
+    r = I.rsi(closes(c), 14)
     if r is None:
-        return None
-    if r <= p["oversold"]:
-        return "call"
-    if r >= p["overbought"]:
-        return "put"
-    return None
+        return NO
+    if r > 55 and I.is_bull(c[-1]):
+        return _res("call", min(90, 40 + r // 2), [f"RSI {r:.0f} > 55", "vela bullish"])
+    if r < 45 and I.is_bear(c[-1]):
+        return _res("put", min(90, 40 + (100 - r) // 2), [f"RSI {r:.0f} < 45", "vela bearish"])
+    return NO
 
 
-def s_rsi_trend(c, p):
-    """RSI como filtro de momentum: >55 call, <45 put (confirmação com vela)."""
-    r = I.rsi([x["close"] for x in c], p["period"])
-    if r is None:
-        return None
-    last = c[-1]
-    if r > 55 and I.is_bull(last):
-        return "call"
-    if r < 45 and I.is_bear(last):
-        return "put"
-    return None
-
-
-def s_bollinger_reversion(c, p):
-    """Bollinger: fecho fora da banda -> regressão à média."""
-    closes = [x["close"] for x in c]
-    b = I.bollinger(closes, p["period"], p["mult"])
-    if b is None:
-        return None
-    lo, mid, hi = b
-    if closes[-1] < lo:
-        return "call"
-    if closes[-1] > hi:
-        return "put"
-    return None
-
-
-def s_bollinger_breakout(c, p):
-    """Bollinger breakout: fecho acima da banda superior com vela forte -> call."""
-    closes = [x["close"] for x in c]
-    b = I.bollinger(closes, p["period"], p["mult"])
-    if b is None:
-        return None
-    lo, mid, hi = b
-    last = c[-1]
-    if closes[-1] > hi and I.is_bull(last):
-        return "call"
-    if closes[-1] < lo and I.is_bear(last):
-        return "put"
-    return None
-
-
-def s_macd_cross(c, p):
-    m = I.macd([x["close"] for x in c], p["fast"], p["slow"], p["signal"])
+# 4. MACD Momentum
+def s_macd_momentum(c):
+    m = I.macd(closes(c))
     if m is None or m["prev_hist"] is None:
-        return None
+        return NO
     if m["prev_hist"] <= 0 < m["hist"]:
-        return "call"
+        return _res("call", 62, ["histograma MACD cruzou positivo"])
     if m["prev_hist"] >= 0 > m["hist"]:
-        return "put"
-    return None
+        return _res("put", 62, ["histograma MACD cruzou negativo"])
+    return NO
 
 
-def s_stochastic(c, p):
-    """Lane Stochastic: %K cruza %D em zonas extremas."""
-    st = I.stochastic(c, p["k"], p["d"])
-    if st is None:
-        return None
-    if st["k"] < 20 and st["k"] > st["d"]:
-        return "call"
-    if st["k"] > 80 and st["k"] < st["d"]:
-        return "put"
-    return None
+# 5. Bollinger Bands
+def s_bollinger(c):
+    cl = closes(c)
+    b = I.bollinger(cl, 20, 2.0)
+    if b is None:
+        return NO
+    lo, mid, hi = b
+    if cl[-1] < lo:
+        return _res("call", 58, ["preço abaixo da banda inferior → reversão"])
+    if cl[-1] > hi:
+        return _res("put", 58, ["preço acima da banda superior → reversão"])
+    return NO
 
 
-def s_engulfing(c, p):
-    """Nison: padrão engolfo de 2 velas na última vela fechada."""
-    if len(c) < 2:
-        return None
+# 6. Support & Resistance
+def s_support_resistance(c):
+    if len(c) < 30:
+        return NO
+    hi = max(x["high"] for x in c[-30:-1]); lo = min(x["low"] for x in c[-30:-1])
+    last = c[-1]
+    if last["low"] <= lo * 1.001 and I.is_bull(last):
+        return _res("call", 60, ["rejeição no suporte de 30 velas"])
+    if last["high"] >= hi * 0.999 and I.is_bear(last):
+        return _res("put", 60, ["rejeição na resistência de 30 velas"])
+    return NO
+
+
+# 7. Breakout
+def s_breakout(c):
+    if len(c) < 25:
+        return NO
+    hi = max(x["high"] for x in c[-25:-1]); lo = min(x["low"] for x in c[-25:-1])
+    last = c[-1]
+    if last["close"] > hi and I.is_bull(last):
+        return _res("call", 63, ["breakout acima do máximo de 25 velas"], "HIGH")
+    if last["close"] < lo and I.is_bear(last):
+        return _res("put", 63, ["breakout abaixo do mínimo de 25 velas"], "HIGH")
+    return NO
+
+
+# 8. Mean Reversion
+def s_mean_reversion(c):
+    cl = closes(c)
+    m = I.sma(cl, 20)
+    if m is None:
+        return NO
+    dev = (cl[-1] - m) / m
+    if dev < -0.004:
+        return _res("call", 55, [f"preço {abs(dev)*100:.1f}% abaixo da média → reversão"])
+    if dev > 0.004:
+        return _res("put", 55, [f"preço {dev*100:.1f}% acima da média → reversão"])
+    return NO
+
+
+# 9. Volatility
+def s_volatility(c):
+    a = I.atr(c, 14)
+    if a is None or len(c) < 16:
+        return NO
+    prev_atr = I.atr(c[:-1], 14) or a
+    if a > prev_atr * 1.5:
+        # spike de volatilidade: segue a direção da última vela
+        if I.is_bull(c[-1]):
+            return _res("call", 52, ["ATR spike + vela bullish"], "HIGH")
+        if I.is_bear(c[-1]):
+            return _res("put", 52, ["ATR spike + vela bearish"], "HIGH")
+    return NO
+
+
+# 10. Momentum (ROC)
+def s_momentum(c):
+    cl = closes(c)
+    if len(cl) < 15:
+        return NO
+    roc = (cl[-1] - cl[-10]) / cl[-10]
+    if roc > 0.003:
+        return _res("call", 57, [f"ROC(10) +{roc*100:.2f}%"])
+    if roc < -0.003:
+        return _res("put", 57, [f"ROC(10) {roc*100:.2f}%"])
+    return NO
+
+
+# 11. EMA Trend
+def s_ema_trend(c):
+    f = I.ema_series(closes(c), 12); s = I.ema_series(closes(c), 26)
+    if len(f) < 2 or f[-1] is None or s[-1] is None:
+        return NO
+    if f[-1] > s[-1] and f[-2] <= s[-2]:
+        return _res("call", 64, ["EMA12 cruzou EMA26 para cima"])
+    if f[-1] < s[-1] and f[-2] >= s[-2]:
+        return _res("put", 64, ["EMA12 cruzou EMA26 para baixo"])
+    return NO
+
+
+# 12. Multi-Indicator Confirmation (RSI + MACD + EMA)
+def s_multi_indicator(c):
+    cl = closes(c)
+    r = I.rsi(cl, 14); m = I.macd(cl)
+    e1 = I.ema(cl, 12); e2 = I.ema(cl, 26)
+    if r is None or m is None or e1 is None:
+        return NO
+    bull = sum([r > 50, m["hist"] > 0, e1 > e2])
+    bear = sum([r < 50, m["hist"] < 0, e1 < e2])
+    if bull == 3:
+        return _res("call", 70, ["RSI>50", "MACD positivo", "EMA bullish"], "LOW")
+    if bear == 3:
+        return _res("put", 70, ["RSI<50", "MACD negativo", "EMA bearish"], "LOW")
+    return NO
+
+
+# 13. Price Action (engolfo / martelo / pin bar / 3 soldados)
+def s_price_action(c):
+    if len(c) < 4:
+        return NO
     a, b = c[-2], c[-1]
     if I.is_bear(a) and I.is_bull(b) and b["close"] > a["open"] and b["open"] < a["close"]:
-        return "call"
+        return _res("call", 66, ["engolfo bullish (Nison)"])
     if I.is_bull(a) and I.is_bear(b) and b["close"] < a["open"] and b["open"] > a["close"]:
-        return "put"
-    return None
-
-
-def s_hammer_star(c, p):
-    """Nison: martelo (fundo) / shooting star (topo)."""
-    last = c[-1]
-    rng = last["high"] - last["low"]
-    if rng == 0:
-        return None
-    lower_wick = min(last["open"], last["close"]) - last["low"]
-    upper_wick = last["high"] - max(last["open"], last["close"])
-    if lower_wick > 2 * abs(I.body(last)) and upper_wick < 0.3 * rng:
-        return "call"
-    if upper_wick > 2 * abs(I.body(last)) and lower_wick < 0.3 * rng:
-        return "put"
-    return None
-
-
-def s_three_soldiers(c, p):
-    """Nison: três soldados brancos / três corvos negros."""
-    if len(c) < 3:
-        return None
+        return _res("put", 66, ["engolfo bearish (Nison)"])
+    rng = b["high"] - b["low"]
+    if rng:
+        lower = min(b["open"], b["close"]) - b["low"]
+        upper = b["high"] - max(b["open"], b["close"])
+        if lower > 2 * abs(I.body(b)) and upper < 0.3 * rng:
+            return _res("call", 61, ["martelo/pin bar bullish"])
+        if upper > 2 * abs(I.body(b)) and lower < 0.3 * rng:
+            return _res("put", 61, ["shooting star/pin bar bearish"])
     t = c[-3:]
     if all(I.is_bull(x) for x in t) and t[0]["close"] < t[1]["close"] < t[2]["close"]:
-        return "call"
+        return _res("call", 63, ["três soldados brancos"])
     if all(I.is_bear(x) for x in t) and t[0]["close"] > t[1]["close"] > t[2]["close"]:
-        return "put"
-    return None
+        return _res("put", 63, ["três corvos negros"])
+    return NO
 
 
-def s_doji_reversal(c, p):
-    """Doji após tendência de 3+ velas: indecisão -> reversão."""
-    if len(c) < 4:
-        return None
-    if not I.is_doji(c[-1], p["tol"]):
-        return None
-    prev = c[-4:-1]
-    if all(I.is_bear(x) for x in prev):
-        return "call"
-    if all(I.is_bull(x) for x in prev):
-        return "put"
-    return None
+# 14. Adaptive (escolhe reversão vs momentum consoante ADX)
+def s_adaptive(c):
+    a = I.adx(c, 14)
+    if a is None:
+        return NO
+    if a["adx"] > 25:  # mercado em tendência → momentum
+        if a["plus_di"] > a["minus_di"] and I.is_bull(c[-1]):
+            return _res("call", 62, [f"ADX {a['adx']:.0f}: tendência forte +DI"], "MEDIUM")
+        if a["minus_di"] > a["plus_di"] and I.is_bear(c[-1]):
+            return _res("put", 62, [f"ADX {a['adx']:.0f}: tendência forte -DI"], "MEDIUM")
+    else:  # range → reversão à média
+        return s_mean_reversion(c)
+    return NO
 
 
-def s_adx_directional(c, p):
-    """Wilder ADX: tendência forte (ADX>limiar) + DI dominante define direção."""
-    a = I.adx(c, p["period"])
-    if a is None or a["adx"] < p["threshold"]:
-        return None
-    if a["plus_di"] > a["minus_di"] and I.is_bull(c[-1]):
-        return "call"
-    if a["minus_di"] > a["plus_di"] and I.is_bear(c[-1]):
-        return "put"
-    return None
-
-
-def s_ema_pullback(c, p):
-    """Pullback à EMA em tendência: preço toca EMA lenta e retoma direção."""
-    closes = [x["close"] for x in c]
-    e = I.ema_series(closes, p["ema"])
-    if len(e) < 3 or e[-1] is None:
-        return None
-    trend_up = closes[-3] > closes[-6 if len(closes) >= 6 else 0] and e[-1] < closes[-1]
-    trend_dn = closes[-3] < closes[-6 if len(closes) >= 6 else 0] and e[-1] > closes[-1]
-    prev, last = c[-2], c[-1]
-    if trend_up and prev["low"] <= e[-2] and I.is_bull(last):
-        return "call"
-    if trend_dn and prev["high"] >= e[-2] and I.is_bear(last):
-        return "put"
-    return None
-
-
-def s_pinbar(c, p):
-    """Price Action: pin bar — pavio longo rejeitando nível."""
-    last = c[-1]
-    rng = last["high"] - last["low"]
-    if rng == 0:
-        return None
-    b = abs(I.body(last))
-    upper = last["high"] - max(last["open"], last["close"])
-    lower = min(last["open"], last["close"]) - last["low"]
-    if lower >= p["wick_ratio"] * rng and b <= 0.3 * rng:
-        return "call"
-    if upper >= p["wick_ratio"] * rng and b <= 0.3 * rng:
-        return "put"
-    return None
+# 15. AI Ensemble — voto ponderado de todas as estratégias
+def s_ai_ensemble(c):
+    votes, reasons = {"call": 0.0, "put": 0.0}, []
+    for sid, s in STRATEGIES.items():
+        if s["fn"] is s_ai_ensemble:
+            continue
+        r = s["fn"](c)
+        if r["signal"]:
+            votes[r["signal"]] += r["confidence"]
+            reasons.append(f"{sid}:{r['signal']}")
+    total = votes["call"] + votes["put"]
+    if total < 180:  # exige consenso mínimo
+        return NO
+    sig = "call" if votes["call"] > votes["put"] else "put"
+    conf = int(100 * max(votes.values()) / total)
+    return _res(sig, min(90, conf), [f"consenso {len(reasons)} estratégias"] + reasons[:5],
+                "LOW" if conf > 70 else "MEDIUM")
 
 
 STRATEGIES = {
-    "sma_cross": {"name": "Cruzamento SMA (Trend Following)", "fn": s_trend_sma_cross,
-                  "params": {"fast": 9, "slow": 21}, "min_candles": 25},
-    "ema_cross": {"name": "Cruzamento EMA", "fn": s_ema_cross,
-                  "params": {"fast": 12, "slow": 26}, "min_candles": 30},
-    "rsi_reversal": {"name": "RSI Reversão (Wilder)", "fn": s_rsi_reversal,
-                     "params": {"period": 14, "oversold": 30, "overbought": 70}, "min_candles": 20},
-    "rsi_trend": {"name": "RSI Momentum", "fn": s_rsi_trend,
-                  "params": {"period": 14}, "min_candles": 20},
-    "bollinger_reversion": {"name": "Bollinger Reversão à Média", "fn": s_bollinger_reversion,
-                            "params": {"period": 20, "mult": 2.0}, "min_candles": 25},
-    "bollinger_breakout": {"name": "Bollinger Breakout", "fn": s_bollinger_breakout,
-                           "params": {"period": 20, "mult": 2.0}, "min_candles": 25},
-    "macd_cross": {"name": "MACD Cruzamento", "fn": s_macd_cross,
-                   "params": {"fast": 12, "slow": 26, "signal": 9}, "min_candles": 40},
-    "stochastic": {"name": "Estocástico (Lane)", "fn": s_stochastic,
-                   "params": {"k": 14, "d": 3}, "min_candles": 20},
-    "engulfing": {"name": "Engolfo (Nison)", "fn": s_engulfing,
-                  "params": {}, "min_candles": 5},
-    "hammer_star": {"name": "Martelo / Shooting Star", "fn": s_hammer_star,
-                    "params": {}, "min_candles": 5},
-    "three_soldiers": {"name": "Três Soldados / Corvos", "fn": s_three_soldiers,
-                       "params": {}, "min_candles": 6},
-    "doji_reversal": {"name": "Doji Reversão", "fn": s_doji_reversal,
-                      "params": {"tol": 0.1}, "min_candles": 8},
-    "adx_directional": {"name": "ADX Direcional (Wilder)", "fn": s_adx_directional,
-                        "params": {"period": 14, "threshold": 25}, "min_candles": 35},
-    "ema_pullback": {"name": "Pullback à EMA", "fn": s_ema_pullback,
-                     "params": {"ema": 20}, "min_candles": 25},
-    "pinbar": {"name": "Pin Bar (Price Action)", "fn": s_pinbar,
-               "params": {"wick_ratio": 0.6}, "min_candles": 5},
+    "trend_following": {"name": "Trend Following", "fn": s_trend_following,
+                        "desc": "Segue a tendência definida por SMA20/SMA50 (Covel).", "min_candles": 55},
+    "ma_cross": {"name": "Moving Average Cross", "fn": s_ma_cross,
+                 "desc": "Cruzamento de médias simples 9/21.", "min_candles": 25},
+    "rsi_momentum": {"name": "RSI Momentum", "fn": s_rsi_momentum,
+                     "desc": "Momentum confirmado por RSI (Wilder).", "min_candles": 20},
+    "macd_momentum": {"name": "MACD Momentum", "fn": s_macd_momentum,
+                      "desc": "Cruzamento do histograma MACD (Appel).", "min_candles": 40},
+    "bollinger": {"name": "Bollinger Bands", "fn": s_bollinger,
+                  "desc": "Reversão à média nos extremos das bandas.", "min_candles": 25},
+    "support_resistance": {"name": "Support & Resistance", "fn": s_support_resistance,
+                           "desc": "Rejeição em suportes/resistências de 30 velas.", "min_candles": 32},
+    "breakout": {"name": "Breakout", "fn": s_breakout,
+                 "desc": "Rutura do máximo/mínimo de 25 velas.", "min_candles": 28},
+    "mean_reversion": {"name": "Mean Reversion", "fn": s_mean_reversion,
+                       "desc": "Regressão à média de 20 períodos.", "min_candles": 22},
+    "volatility": {"name": "Volatility", "fn": s_volatility,
+                   "desc": "Spikes de ATR com direção da vela.", "min_candles": 20},
+    "momentum": {"name": "Momentum (ROC)", "fn": s_momentum,
+                 "desc": "Rate of change de 10 períodos.", "min_candles": 15},
+    "ema_trend": {"name": "EMA Trend", "fn": s_ema_trend,
+                  "desc": "Cruzamento EMA12/EMA26.", "min_candles": 30},
+    "multi_indicator": {"name": "Multi-Indicator Confirmation", "fn": s_multi_indicator,
+                        "desc": "Consenso RSI + MACD + EMA.", "min_candles": 40},
+    "price_action": {"name": "Price Action", "fn": s_price_action,
+                     "desc": "Padrões de velas Nison (engolfo, martelo, pin bar, 3 soldados).", "min_candles": 8},
+    "adaptive": {"name": "Adaptive Strategy", "fn": s_adaptive,
+                 "desc": "Alterna momentum/reversão consoante o ADX.", "min_candles": 35},
+    "ai_ensemble": {"name": "AI Ensemble", "fn": s_ai_ensemble,
+                    "desc": "Voto ponderado de todas as estratégias.", "min_candles": 55},
 }

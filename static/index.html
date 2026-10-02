@@ -3,101 +3,219 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Quotex Bot</title>
+<title>Quotex Trading Platform</title>
 <style>
-  :root { --bg:#0e1117; --card:#161b26; --line:#262e3f; --txt:#e6e9f0; --mut:#8b93a7;
-          --green:#22c55e; --red:#ef4444; --accent:#6366f1; }
-  * { box-sizing:border-box; }
-  body { margin:0; font-family:system-ui,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--txt); }
-  .wrap { max-width:1100px; margin:0 auto; padding:20px; }
-  h1 { font-size:20px; margin:0 0 16px; }
-  .grid { display:grid; grid-template-columns:340px 1fr; gap:16px; }
-  @media(max-width:900px){ .grid{grid-template-columns:1fr} }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px; }
-  label { display:block; font-size:12px; color:var(--mut); margin:10px 0 4px; }
-  input,select { width:100%; padding:9px 10px; border-radius:8px; border:1px solid var(--line);
-                 background:#0d1220; color:var(--txt); font-size:14px; }
-  button { cursor:pointer; border:none; border-radius:8px; padding:10px 16px; font-size:14px; font-weight:600; }
-  .btn-main { background:var(--accent); color:#fff; width:100%; margin-top:12px; }
-  .btn-stop { background:var(--red); color:#fff; }
-  .btn-go { background:var(--green); color:#04120a; }
-  .row { display:flex; gap:10px; }
-  .row > * { flex:1; }
-  .seg { display:flex; gap:6px; margin-top:4px; }
-  .seg button { flex:1; padding:8px; background:#0d1220; color:var(--mut); border:1px solid var(--line); }
-  .seg button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
-  .stat { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--line); font-size:14px; }
-  .stat b { font-variant-numeric:tabular-nums; }
-  table { width:100%; border-collapse:collapse; font-size:13px; }
-  th,td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); }
-  th { color:var(--mut); font-weight:600; font-size:11px; text-transform:uppercase; }
-  .win { color:var(--green); font-weight:700; }
-  .loss { color:var(--red); font-weight:700; }
-  .pill { display:inline-block; padding:3px 10px; border-radius:99px; font-size:12px; }
-  .pill.on { background:#052e16; color:var(--green); }
-  .pill.off { background:#2a0b0b; color:var(--red); }
-  #err { color:var(--red); font-size:13px; margin-top:8px; }
+:root{--bg:#0b0e14;--card:#131826;--line:#232b3d;--txt:#e8ecf4;--mut:#8892a8;
+      --g:#22c55e;--r:#ef4444;--a:#6366f1;--amber:#f59e0b}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,system-ui,Segoe UI,sans-serif;background:var(--bg);color:var(--txt);font-size:14px}
+.app{display:flex;min-height:100vh}
+aside{width:210px;background:var(--card);border-right:1px solid var(--line);padding:18px 12px;position:sticky;top:0;height:100vh;flex-shrink:0}
+.logo{font-weight:800;font-size:16px;margin:0 8px 20px}
+.logo span{color:var(--a)}
+nav button{display:block;width:100%;text-align:left;background:none;border:none;color:var(--mut);padding:9px 12px;border-radius:8px;font-size:13.5px;cursor:pointer;margin-bottom:2px}
+nav button.on,nav button:hover{background:#1c2436;color:var(--txt)}
+main{flex:1;padding:20px 24px;max-width:1200px}
+h2{font-size:17px;margin:0 0 14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+.grid{display:grid;gap:14px}
+.g4{grid-template-columns:repeat(4,1fr)}.g2{grid-template-columns:1fr 1fr}
+@media(max-width:900px){.g4{grid-template-columns:1fr 1fr}.g2{grid-template-columns:1fr}aside{display:none}}
+.kpi{padding:14px}
+.kpi .l{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px}
+.kpi .v{font-size:22px;font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums}
+label{display:block;font-size:11.5px;color:var(--mut);margin:10px 0 4px;text-transform:uppercase;letter-spacing:.4px}
+input,select{width:100%;padding:9px 10px;border-radius:8px;border:1px solid var(--line);background:#0d1220;color:var(--txt);font-size:14px}
+button.b{border:none;border-radius:8px;padding:10px 16px;font-weight:700;cursor:pointer;font-size:13.5px}
+.b.go{background:var(--g);color:#03130a}.b.stop{background:var(--r);color:#fff}
+.b.def{background:var(--a);color:#fff}.b.ghost{background:#0d1220;color:var(--mut);border:1px solid var(--line)}
+.row{display:flex;gap:10px}.row>*{flex:1}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line)}
+th{color:var(--mut);font-size:10.5px;text-transform:uppercase;font-weight:600}
+.win{color:var(--g);font-weight:700}.loss{color:var(--r);font-weight:700}
+.pill{padding:3px 10px;border-radius:99px;font-size:11.5px;font-weight:600}
+.pill.on{background:#052e16;color:var(--g)}.pill.off{background:#2a0b0b;color:var(--r)}
+.pill.real{background:#312e81;color:#c7d2fe}
+.sig{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.tag{background:#0d1220;border:1px solid var(--line);border-radius:6px;padding:3px 8px;font-size:12px;color:var(--mut)}
+.mono{font-variant-numeric:tabular-nums;font-family:ui-monospace,Consolas,monospace}
+#countdown{font-size:34px;font-weight:800;font-variant-numeric:tabular-nums}
+.page{display:none}.page.on{display:block}
+.disc{font-size:11px;color:var(--mut);margin-top:10px}
+.err{color:var(--r);font-size:12.5px}
+canvas{width:100%;height:120px}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>Quotex Bot — Painel</h1>
-  <div class="grid">
-    <div>
-      <div class="card" id="loginCard">
-        <b>1. Ligação à Quotex</b>
-        <label>Email</label><input id="email" type="email" placeholder="a-tua-conta@email.com">
-        <label>Password</label><input id="password" type="password">
-        <label>ou SSID da sessão (se a Cloudflare bloquear)</label>
-        <input id="ssid" placeholder='42["authorization",{"session":"...","isDemo":0}]'>
-        <label>Conta</label>
-        <div class="seg">
-          <button id="accDemo" class="on" onclick="setAcc('PRACTICE')">DEMO</button>
-          <button id="accReal" onclick="setAcc('REAL')">REAL</button>
+<div id="loginScr" style="display:flex;min-height:100vh;align-items:center;justify-content:center">
+  <div class="card" style="width:320px">
+    <div class="logo">Quotex<span>Bot</span></div>
+    <label>Password do painel</label>
+    <input id="pw" type="password" placeholder="(defeito: devin)">
+    <button class="b def" style="width:100%;margin-top:12px" onclick="login()">Entrar</button>
+    <div class="err" id="loginErr"></div>
+  </div>
+</div>
+<div class="app" id="app" style="display:none">
+<aside>
+  <div class="logo">Quotex<span>Bot</span></div>
+  <nav id="nav">
+    <button data-p="dashboard" class="on">Dashboard</button>
+    <button data-p="autobot">Auto Bot</button>
+    <button data-p="strategies">Strategy Lab</button>
+    <button data-p="backtest">Backtest</button>
+    <button data-p="history">Histórico</button>
+    <button data-p="risk">Gestão de Risco</button>
+    <button data-p="knowledge">Knowledge Base</button>
+    <button data-p="settings">Conta & Ligação</button>
+  </nav>
+</aside>
+<main>
+  <!-- DASHBOARD -->
+  <div class="page on" id="p-dashboard">
+    <h2>Dashboard</h2>
+    <div class="grid g4">
+      <div class="card kpi"><div class="l">Conta <span class="pill real" id="accPill">REAL</span></div><div class="v mono" id="dBalance">—</div></div>
+      <div class="card kpi"><div class="l">P/L Hoje</div><div class="v mono" id="dPnl">—</div></div>
+      <div class="card kpi"><div class="l">Win Rate</div><div class="v mono" id="dWr">—</div></div>
+      <div class="card kpi"><div class="l">Operações hoje</div><div class="v mono" id="dOps">—</div></div>
+    </div>
+    <div class="grid g2">
+      <div class="card"><b>AI Market Analyst</b> <select id="anAsset" onchange="loadAnalysis()" style="margin-top:8px"></select>
+        <div id="anBody" style="margin-top:10px"></div>
+        <div class="disc">Educational analysis. Past performance does not guarantee future results.</div></div>
+      <div class="card"><b>Trades abertos</b>
+        <table><tbody id="openBody"></tbody></table>
+        <div id="noOpen" class="disc">Sem operações em curso.</div></div>
+    </div>
+    <div class="card"><b>Último sinal</b><div id="dSignal" style="margin-top:8px">—</div></div>
+  </div>
+
+  <!-- AUTO BOT -->
+  <div class="page" id="p-autobot">
+    <h2>Auto Bot</h2>
+    <div class="grid g2">
+      <div class="card">
+        <b>Configuração</b>
+        <label>Ativo</label><select id="abAsset"></select>
+        <div class="row">
+          <div><label>Valor ($)</label><input id="abAmount" type="number" value="10" min="1"></div>
+          <div><label>Duração</label><select id="abExpiry"><option value="60">1 min</option><option value="180">3 min</option><option value="300" selected>5 min</option><option value="600">10 min</option><option value="900">15 min</option></select></div>
         </div>
-        <button class="btn-main" onclick="login()">Ligar</button>
-        <div id="err"></div>
+        <label>Estratégia</label><select id="abStrategy"></select>
+        <label>Confiança mínima (%)</label><input id="abConf" type="number" value="55" min="0" max="100">
+        <div class="row" style="margin-top:14px">
+          <button class="b go" onclick="abStart()">▶ AUTO BOT ON</button>
+          <button class="b stop" onclick="abStop()">■ PARAR AUTO BOT</button>
+        </div>
+        <div class="disc">Ao parar, não abre novas operações; as abertas terminam.</div>
       </div>
       <div class="card">
-        <b>2. Operação</b>
-        <label>Ativo</label><input id="asset" value="EURUSD_otc">
-        <div class="row">
-          <div><label>Valor ($)</label><input id="amount" type="number" value="10" min="1" step="1"></div>
-          <div><label>Expiração</label>
-            <select id="expiry">
-              <option value="60">1 min</option>
-              <option value="120">2 min</option>
-              <option value="300" selected>5 min</option>
-              <option value="900">15 min</option>
-            </select></div>
-        </div>
-        <label>Estratégia</label><select id="strategy"></select>
-        <div class="row" style="margin-top:12px">
-          <button class="btn-go" id="btnStart" onclick="start()">▶ Iniciar</button>
-          <button class="btn-stop" id="btnStop" onclick="stop()" disabled>■ Parar</button>
-        </div>
+        <b>Estado</b> <span class="pill off" id="abPill">OFF</span>
+        <div class="mono" id="abPhase" style="margin:12px 0;font-size:15px">IDLE</div>
+        <div id="countdown">—</div>
+        <div class="sig" id="abReasons"></div>
+        <div class="disc" id="riskMsg"></div>
       </div>
     </div>
-    <div>
-      <div class="card">
-        <b>Estado</b> <span class="pill off" id="runPill">Parado</span>
-        <div class="stat"><span>Saldo</span><b id="balance">—</b></div>
-        <div class="stat"><span>Conta</span><b id="account">—</b></div>
-        <div class="stat"><span>Último sinal</span><b id="signal">—</b></div>
-        <div class="stat"><span>Trade aberto</span><b id="open">—</b></div>
+    <div class="card"><b>Execução manual</b>
+      <div class="row">
+        <div><label>Ativo</label><select id="mAsset"></select></div>
+        <div><label>Valor</label><input id="mAmount" type="number" value="10"></div>
+        <div><label>Duração</label><select id="mExpiry"><option value="60">1 min</option><option value="300" selected>5 min</option></select></div>
       </div>
-      <div class="card">
-        <b>Desempenho por estratégia</b>
-        <table><thead><tr><th>Estratégia</th><th>Trades</th><th>Win %</th><th>P&L</th></tr></thead>
-        <tbody id="statsBody"></tbody></table>
-      </div>
-      <div class="card">
-        <b>Histórico de trades</b>
-        <table><thead><tr><th>Hora</th><th>Ativo</th><th>Dir</th><th>Valor</th><th>Resultado</th></tr></thead>
-        <tbody id="tradesBody"></tbody></table>
+      <div class="row" style="margin-top:10px">
+        <button class="b go" onclick="manual('call')">CALL ▲</button>
+        <button class="b stop" onclick="manual('put')">PUT ▼</button>
       </div>
     </div>
   </div>
+
+  <!-- STRATEGY LAB -->
+  <div class="page" id="p-strategies">
+    <h2>Strategy Lab</h2>
+    <div class="grid g2" id="stratGrid"></div>
+  </div>
+
+  <!-- BACKTEST -->
+  <div class="page" id="p-backtest">
+    <h2>Backtest</h2>
+    <div class="card">
+      <div class="row">
+        <div><label>Estratégia</label><select id="btStrategy"></select></div>
+        <div><label>Ativo</label><select id="btAsset"></select></div>
+        <div><label>Candles</label><input id="btN" type="number" value="500"></div>
+      </div>
+      <button class="b def" style="margin-top:12px" onclick="runBt()">▶ BACKTEST</button>
+    </div>
+    <div class="card" id="btRes" style="display:none">
+      <b>Resultado</b>
+      <div class="grid g4" style="margin-top:10px">
+        <div class="kpi"><div class="l">Trades</div><div class="v mono" id="btTrades"></div></div>
+        <div class="kpi"><div class="l">Win rate</div><div class="v mono" id="btWr"></div></div>
+        <div class="kpi"><div class="l">P/L</div><div class="v mono" id="btPnl"></div></div>
+        <div class="kpi"><div class="l">Período</div><div class="v" id="btPeriod" style="font-size:13px"></div></div>
+      </div>
+      <canvas id="btCurve" width="800" height="120"></canvas>
+      <div class="disc" id="btDisc"></div>
+    </div>
+  </div>
+
+  <!-- HISTORY -->
+  <div class="page" id="p-history">
+    <h2>Histórico</h2>
+    <div class="card">
+      <div class="row">
+        <select id="hDays" onchange="loadHistory()"><option value="">Todo</option><option value="1">Hoje</option><option value="7">7 dias</option><option value="30">30 dias</option></select>
+        <select id="hResult" onchange="loadHistory()"><option value="">Todos</option><option value="win">WIN</option><option value="loss">LOSS</option></select>
+        <select id="hStrat" onchange="loadHistory()"><option value="">Todas estratégias</option></select>
+      </div>
+    </div>
+    <div class="card"><table><thead><tr><th>Hora</th><th>Ativo</th><th>Dir</th><th>Valor</th><th>Estratégia</th><th>Entrada</th><th>Saída</th><th>Result</th><th>P/L</th></tr></thead>
+    <tbody id="hBody"></tbody></table></div>
+  </div>
+
+  <!-- RISK -->
+  <div class="page" id="p-risk">
+    <h2>Gestão de Risco</h2>
+    <div class="card"><div class="grid g2">
+      <div><label>Máx. por operação ($)</label><input id="rMaxTrade" type="number"></div>
+      <div><label>Perda diária máx. ($)</label><input id="rDailyLoss" type="number"></div>
+      <div><label>Perdas consecutivas máx.</label><input id="rConsec" type="number"></div>
+      <div><label>Operações simultâneas</label><input id="rSim" type="number"></div>
+      <div><label>Cooldown (s)</label><input id="rCool" type="number"></div>
+      <div><label>Meta diária ($)</label><input id="rTarget" type="number"></div>
+    </div>
+    <button class="b def" style="margin-top:12px" onclick="saveRisk()">Guardar</button>
+    <button class="b ghost" style="margin-top:12px;margin-left:8px" onclick="resumeRisk()">Retomar Auto Bot</button>
+    <div class="err" id="rState" style="margin-top:8px"></div></div>
+  </div>
+
+  <!-- KNOWLEDGE -->
+  <div class="page" id="p-knowledge">
+    <h2>Knowledge Base</h2>
+    <div id="kbBody"></div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div class="page" id="p-settings">
+    <h2>Conta & Ligação</h2>
+    <div class="card"><b>Ligar à Quotex (conta REAL por defeito)</b>
+      <label>Email</label><input id="qEmail" type="email">
+      <label>Password</label><input id="qPass" type="password">
+      <label>ou SSID da sessão</label><input id="qSsid" placeholder='42["authorization",{"session":"..."}]'>
+      <label>Conta</label>
+      <div class="seg row" style="gap:6px">
+        <button class="b def" id="accReal" style="flex:1" onclick="setAcc('REAL')">REAL</button>
+        <button class="b ghost" id="accDemo" style="flex:1" onclick="setAcc('PRACTICE')">DEMO (treino)</button>
+      </div>
+      <button class="b def" style="width:100%;margin-top:14px" onclick="brokerConnect()">Ligar ao broker</button>
+      <div class="err" id="connMsg"></div>
+      <div class="disc">Sem ligação, a plataforma opera em modo SIM com feed sintético. Credenciais nunca são guardadas.</div>
+    </div>
+  </div>
+</main>
 </div>
 <script src="/static/app.js"></script>
 </body>
