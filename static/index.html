@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quotex Bot</title>
+<style>
+  :root { --bg:#0e1117; --card:#161b26; --line:#262e3f; --txt:#e6e9f0; --mut:#8b93a7;
+          --green:#22c55e; --red:#ef4444; --accent:#6366f1; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--txt); }
+  .wrap { max-width:1100px; margin:0 auto; padding:20px; }
+  h1 { font-size:20px; margin:0 0 16px; }
+  .grid { display:grid; grid-template-columns:340px 1fr; gap:16px; }
+  @media(max-width:900px){ .grid{grid-template-columns:1fr} }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px; }
+  label { display:block; font-size:12px; color:var(--mut); margin:10px 0 4px; }
+  input,select { width:100%; padding:9px 10px; border-radius:8px; border:1px solid var(--line);
+                 background:#0d1220; color:var(--txt); font-size:14px; }
+  button { cursor:pointer; border:none; border-radius:8px; padding:10px 16px; font-size:14px; font-weight:600; }
+  .btn-main { background:var(--accent); color:#fff; width:100%; margin-top:12px; }
+  .btn-stop { background:var(--red); color:#fff; }
+  .btn-go { background:var(--green); color:#04120a; }
+  .row { display:flex; gap:10px; }
+  .row > * { flex:1; }
+  .seg { display:flex; gap:6px; margin-top:4px; }
+  .seg button { flex:1; padding:8px; background:#0d1220; color:var(--mut); border:1px solid var(--line); }
+  .seg button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .stat { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--line); font-size:14px; }
+  .stat b { font-variant-numeric:tabular-nums; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th,td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); }
+  th { color:var(--mut); font-weight:600; font-size:11px; text-transform:uppercase; }
+  .win { color:var(--green); font-weight:700; }
+  .loss { color:var(--red); font-weight:700; }
+  .pill { display:inline-block; padding:3px 10px; border-radius:99px; font-size:12px; }
+  .pill.on { background:#052e16; color:var(--green); }
+  .pill.off { background:#2a0b0b; color:var(--red); }
+  #err { color:var(--red); font-size:13px; margin-top:8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Quotex Bot — Painel</h1>
+  <div class="grid">
+    <div>
+      <div class="card" id="loginCard">
+        <b>1. Ligação à Quotex</b>
+        <label>Email</label><input id="email" type="email" placeholder="a-tua-conta@email.com">
+        <label>Password</label><input id="password" type="password">
+        <label>ou SSID da sessão (se a Cloudflare bloquear)</label>
+        <input id="ssid" placeholder='42["authorization",{"session":"...","isDemo":0}]'>
+        <label>Conta</label>
+        <div class="seg">
+          <button id="accDemo" class="on" onclick="setAcc('PRACTICE')">DEMO</button>
+          <button id="accReal" onclick="setAcc('REAL')">REAL</button>
+        </div>
+        <button class="btn-main" onclick="login()">Ligar</button>
+        <div id="err"></div>
+      </div>
+      <div class="card">
+        <b>2. Operação</b>
+        <label>Ativo</label><input id="asset" value="EURUSD_otc">
+        <div class="row">
+          <div><label>Valor ($)</label><input id="amount" type="number" value="10" min="1" step="1"></div>
+          <div><label>Expiração</label>
+            <select id="expiry">
+              <option value="60">1 min</option>
+              <option value="120">2 min</option>
+              <option value="300" selected>5 min</option>
+              <option value="900">15 min</option>
+            </select></div>
+        </div>
+        <label>Estratégia</label><select id="strategy"></select>
+        <div class="row" style="margin-top:12px">
+          <button class="btn-go" id="btnStart" onclick="start()">▶ Iniciar</button>
+          <button class="btn-stop" id="btnStop" onclick="stop()" disabled>■ Parar</button>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <b>Estado</b> <span class="pill off" id="runPill">Parado</span>
+        <div class="stat"><span>Saldo</span><b id="balance">—</b></div>
+        <div class="stat"><span>Conta</span><b id="account">—</b></div>
+        <div class="stat"><span>Último sinal</span><b id="signal">—</b></div>
+        <div class="stat"><span>Trade aberto</span><b id="open">—</b></div>
+      </div>
+      <div class="card">
+        <b>Desempenho por estratégia</b>
+        <table><thead><tr><th>Estratégia</th><th>Trades</th><th>Win %</th><th>P&L</th></tr></thead>
+        <tbody id="statsBody"></tbody></table>
+      </div>
+      <div class="card">
+        <b>Histórico de trades</b>
+        <table><thead><tr><th>Hora</th><th>Ativo</th><th>Dir</th><th>Valor</th><th>Resultado</th></tr></thead>
+        <tbody id="tradesBody"></tbody></table>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>
