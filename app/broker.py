@@ -1,0 +1,233 @@
+"""BrokerAdapter — camada única de acesso ao broker.
+
+Interface pedida pelo spec:
+    connect() / getBalance() / getMarketData() / placeOrder() /
+    getOrderStatus() / cancelOrder()
+
+Implementações:
+  - QuotexAdapter: execução REAL via pyquotex (não-oficial).
+  - SimAdapter: motor de simulação local (dados sintéticos) — usado como
+    fallback quando não há ligação à Quotex e para backtests.
+"""
+
+import asyncio
+import random
+import time
+import uuid
+
+
+class BrokerAdapter:
+    mode = "base"
+
+    async def connect(self):
+        raise NotImplementedError
+
+    async def get_balance(self):
+        raise NotImplementedError
+
+    async def get_candles(self, asset, period, n):
+        raise NotImplementedError
+
+    async def place_order(self, asset, amount, direction, expiry):
+        """Devolve order_id."""
+        raise NotImplementedError
+
+    async def get_order_status(self, order_id):
+        """Devolve {state: open|closed, result: win|loss|None, profit: float}."""
+        raise NotImplementedError
+
+    async def cancel_order(self, order_id):
+        raise NotImplementedError
+
+
+# ---------------------------------------------------------------- Quotex real
+
+class QuotexAdapter(BrokerAdapter):
+    mode = "REAL"
+
+    def __init__(self, email=None, password=None, ssid=None):
+        self._kw = {"lang": "pt"}
+        if ssid:
+            self._kw["set_ssid"] = ssid
+        else:
+            self._kw.update(email=email, password=password)
+        self.client = None
+        self.account = "REAL"
+
+    async def connect(self):
+        from quotexapi.stable_api import Quotex
+        self.client = Quotex(**self._kw)
+        return await self.client.connect()
+
+    async def set_account(self, mode):
+        try:
+            await self.client.change_account(mode)
+        except AttributeError:
+            self.client.change_balance(mode)
+        self.account = mode
+
+    async def get_balance(self):
+        return await self.client.get_balance()
+
+    async def get_candles(self, asset, period, n):
+        for name in ("get_candles", "get_candle"):
+            fn = getattr(self.client, name, None)
+            if not fn:
+                continue
+            for args in ((asset, period, n, int(time.time())),
+                         (asset, int(time.time()) - n * period, int(time.time()), period)):
+                try:
+                    rows = await fn(*args)
+                    out = _norm(rows)
+                    if out:
+                        return out
+                except Exception:
+                    continue
+        return []
+
+    async def place_order(self, asset, amount, direction, expiry):
+        status, info = await self.client.buy(amount, asset, direction, expiry)
+        if not status:
+            raise RuntimeError(f"Ordem rejeitada: {info}")
+        return info.get("id") if isinstance(info, dict) else info
+
+    async def get_order_status(self, order_id):
+        win, info = await self.client.check_win(order_id)
+        profit = 0.0
+        if isinstance(info, dict):
+            profit = float(info.get("profitAmount", info.get("win", 0)) or 0)
+        return {"state": "closed", "result": "win" if win else "loss", "profit": profit}
+
+    async def cancel_order(self, order_id):
+        return None
+
+
+def _norm(rows):
+    out = []
+    for r in rows or []:
+        if isinstance(r, dict):
+            out.append({"time": r.get("time") or r.get("from") or r.get("timestamp"),
+                        "open": float(r.get("open", 0)), "high": float(r.get("high", 0)),
+                        "low": float(r.get("low", 0)), "close": float(r.get("close", 0))})
+        elif isinstance(r, (list, tuple)) and len(r) >= 5:
+            out.append({"time": r[0], "open": float(r[1]), "high": float(r[2]),
+                        "low": float(r[3]), "close": float(r[4])})
+    return [c for c in out if c["close"]]
+
+
+# ---------------------------------------------------------------- Simulation
+
+ASSETS = {
+    "EURUSD": 1.0850, "GBPUSD": 1.2650, "USDJPY": 151.20, "AUDUSD": 0.6550,
+    "USDCAD": 1.3580, "EURGBP": 0.8570, "BTCUSD": 67000.0, "XAUUSD": 2380.0,
+}
+
+# payout típico Quotex ~ 80-98%
+PAYOUT = 0.92
+
+
+class SimFeed:
+    """Feed sintético: random walk com regimes de tendência/volatilidade."""
+
+    def __init__(self, seed=None):
+        self.rng = random.Random(seed)
+        self.prices = {a: p for a, p in ASSETS.items()}
+        self.trend = {a: 0.0 for a in ASSETS}
+        self.candles = {}
+
+    def _step(self, asset, dt=1.0):
+        r = self.rng
+        if r.random() < 0.02:  # muda de regime
+            self.trend[asset] = r.uniform(-0.0004, 0.0004)
+        vol = self.prices[asset] * 0.0006
+        drift = self.trend[asset] * self.prices[asset] * dt
+        shock = r.gauss(0, vol * (dt ** 0.5))
+        self.prices[asset] = max(self.prices[asset] * 0.2, self.prices[asset] + drift + shock)
+        return self.prices[asset]
+
+    def tick(self, asset):
+        return self._step(asset)
+
+    def build_candles(self, asset, period, n):
+        """Gera n candles de `period` segundos até agora."""
+        now = int(time.time())
+        candles = []
+        price = self.prices.get(asset, ASSETS.get(asset, 1.0))
+        # backfill histórico
+        hist = []
+        for i in range(n):
+            p = price
+            o = p
+            drift = self.rng.gauss(0, p * 0.0004)
+            cl = p + drift
+            hi = max(o, cl) + abs(self.rng.gauss(0, p * 0.0002))
+            lo = min(o, cl) - abs(self.rng.gauss(0, p * 0.0002))
+            hist.append({"time": now - (n - i) * period, "open": o, "high": hi,
+                         "low": lo, "close": cl})
+            price = cl
+        return hist
+
+
+class SimAdapter(BrokerAdapter):
+    """Execução virtual: saldo simulado, latência e slippage configuráveis."""
+
+    mode = "SIM"
+
+    def __init__(self, balance=1000.0, latency_ms=150, slippage=0.0001):
+        self.balance = balance
+        self.feed = SimFeed()
+        self.orders = {}
+        self.latency_ms = latency_ms
+        self.slippage = slippage
+
+    async def connect(self):
+        return True, "simulated feed"
+
+    async def get_balance(self):
+        return round(self.balance, 2)
+
+    async def get_candles(self, asset, period, n):
+        return self.feed.build_candles(asset, period, n)
+
+    def price(self, asset):
+        return self.feed.prices.get(asset) or self.feed.tick(asset)
+
+    async def place_order(self, asset, amount, direction, expiry):
+        if amount > self.balance:
+            raise RuntimeError("Saldo insuficiente")
+        await asyncio.sleep(self.latency_ms / 1000)
+        entry = self.price(asset) * (1 + self.rng_slip(direction))
+        oid = str(uuid.uuid4())[:12]
+        self.balance -= amount
+        self.orders[oid] = {
+            "asset": asset, "amount": amount, "direction": direction,
+            "entry": entry, "open_ts": time.time(), "expiry": expiry, "state": "open",
+        }
+        return oid
+
+    def rng_slip(self, direction):
+        s = self.feed.rng.uniform(-self.slippage, self.slippage)
+        return s if direction == "call" else -s
+
+    async def get_order_status(self, order_id):
+        o = self.orders.get(order_id)
+        if not o:
+            return {"state": "closed", "result": None, "profit": 0}
+        if o["state"] == "open" and time.time() - o["open_ts"] >= o["expiry"]:
+            exit_price = self.price(o["asset"])
+            diff = exit_price - o["entry"] if o["direction"] == "call" else o["entry"] - exit_price
+            if diff > 0:
+                o.update(state="closed", result="win",
+                         profit=round(o["amount"] * PAYOUT, 2), exit=exit_price)
+                self.balance += o["amount"] + o["profit"]
+            elif diff < 0:
+                o.update(state="closed", result="loss", profit=-o["amount"], exit=exit_price)
+            else:
+                o.update(state="closed", result="tie", profit=0.0, exit=exit_price)
+                self.balance += o["amount"]
+        return o
+
+    async def cancel_order(self, order_id):
+        o = self.orders.pop(order_id, None)
+        if o:
+            self.balance += o["amount"]
