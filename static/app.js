@@ -70,6 +70,7 @@ async function loadSignals() {
         </div>
         <div class="sig" style="margin-top:8px">
           <span class="tag">conf ${s.confidence}%</span>
+          <span class="tag">votos ${s.votes}</span>
           <span class="tag">expiração ${s.suggested_expiry}s</span>
         </div>
         <div class="disc">${s.reasons.join(" · ")}</div>

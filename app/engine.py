@@ -170,9 +170,11 @@ class Engine:
                 # quando um sinal passa a confiança mínima
                 best = None  # (res, asset)
                 t0 = time.time()
+                empty_rounds = 0
                 while time.time() - t0 < win and self.autobot_on:
                     rem = int(win - (time.time() - t0))
                     self.state["phase"] = f"ANALYZING {max(0, rem)}s"
+                    got = 0
                     for a in assets:
                         try:
                             candles = await asyncio.wait_for(
@@ -182,6 +184,7 @@ class Engine:
                             continue
                         if not candles:
                             continue
+                        got += 1
                         res = s["fn"](candles[-(s["min_candles"] + 30):])
                         if res["signal"] and (
                                 not best or res["confidence"] > best[0]["confidence"]):
@@ -190,6 +193,17 @@ class Engine:
                     # oportunidade encontrada → abre já
                     if best and best[0]["confidence"] >= minconf:
                         break
+                    # feed morto (WS caiu) → reconecta e volta a tentar
+                    if got == 0:
+                        empty_rounds += 1
+                        if empty_rounds >= 3:
+                            rec = getattr(self.broker, "reconnect", None)
+                            if rec:
+                                self.state["phase"] = "RECONNECTING"
+                                await rec()
+                            empty_rounds = 0
+                    else:
+                        empty_rounds = 0
                     await asyncio.sleep(3)
                 if not self.autobot_on:
                     continue
