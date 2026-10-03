@@ -30,9 +30,11 @@ class Engine:
         self.task = None
         self.stop_flag = asyncio.Event()
         self.state = {"last_signal": None, "phase": "IDLE", "error": None}
+        self._main_loop = None
 
     # ------------------------------------------------ ligação
     async def connect_real(self, email=None, password=None, ssid=None, account="REAL"):
+        self._main_loop = asyncio.get_running_loop()
         adapter = QuotexAdapter(email=email, password=password, ssid=ssid)
         ok, msg = await adapter.connect()
         if ok:
@@ -98,7 +100,14 @@ class Engine:
         self.autobot_on = True
         if not self.task or self.task.done():
             self.stop_flag.clear()
-            self.task = asyncio.create_task(self._loop())
+            loop = self._main_loop
+            if loop and loop.is_running():
+                # este endpoint corre numa thread — agendar a task no loop principal
+                loop.call_soon_threadsafe(
+                    lambda: setattr(self, "task",
+                                    asyncio.ensure_future(self._loop())))
+            else:
+                self.task = asyncio.create_task(self._loop())
         return True
 
     def autobot_stop(self):
