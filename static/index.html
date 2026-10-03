@@ -85,6 +85,7 @@ canvas{width:100%}
   <nav id="nav">
     <button data-p="dashboard" class="on">◈ Dashboard</button>
     <button data-p="autobot">◉ Auto Bot</button>
+    <button data-p="signals">⚡ Sinais</button>
     <button data-p="strategies">◇ Strategy Lab</button>
     <button data-p="backtest">◧ Backtest</button>
     <button data-p="history">≡ Histórico</button>
@@ -179,6 +180,14 @@ canvas{width:100%}
       </div>
       <div class="err" id="mErr"></div>
     </div>
+  </div>
+
+  <!-- SIGNALS -->
+  <div class="page" id="p-signals">
+    <h2>Sinais em tempo real <span class="tag" id="sigScan"></span></h2>
+    <div class="disc" style="margin-bottom:10px">Para entrada manual — não interfere com o Auto Bot. COMPRAR AGORA = CALL, VENDER AGORA = PUT. Atualiza a cada 15s.</div>
+    <div class="grid g2" id="sigBody"></div>
+    <div class="card" id="noSig" style="display:none">Sem oportunidades fortes agora — a varrer…</div>
   </div>
 
   <!-- STRATEGY LAB -->
