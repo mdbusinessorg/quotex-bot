@@ -199,6 +199,46 @@ def knowledge(_=Depends(auth)):
     return KNOWLEDGE
 
 
+@app.get("/api/profile")
+async def profile(_=Depends(auth)):
+    """Dados do utilizador logado na Quotex (saldos demo/real)."""
+    from .broker import QuotexAdapter
+    if isinstance(engine.broker, QuotexAdapter):
+        prof = await engine.broker.get_profile()
+        prof["connected"] = True
+        prof["current_balance"] = await engine.balance()
+        return prof
+    return {"connected": False, "broker_mode": "SIM",
+            "balance": await engine.balance()}
+
+
+@app.get("/api/candles/{asset}")
+async def candles_ep(asset: str, period: int = 60, n: int = 120, _=Depends(auth)):
+    """Candles em tempo real para o gráfico do painel."""
+    rows = await engine.broker.get_candles(asset, period, n)
+    return {"asset": asset, "period": period, "candles": rows}
+
+
+@app.get("/api/patterns/{asset}")
+async def patterns_ep(asset: str, period: int = 60, _=Depends(auth)):
+    from . import patterns
+    rows = await engine.broker.get_candles(asset, period, 150)
+    if not rows:
+        return {"error": "sem dados"}
+    return patterns.scan_candles(rows)
+
+
+@app.get("/api/ai/insight/{asset}")
+async def ai_insight_ep(asset: str, _=Depends(auth)):
+    from . import patterns, ai
+    rows = await engine.broker.get_candles(asset, 60, 150)
+    if not rows:
+        return {"error": "sem dados"}
+    pat = patterns.scan_candles(rows)
+    ana = market_analysis(rows)
+    return ai.ai_insight(asset, rows, pat, ana)
+
+
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 if __name__ == "__main__":

@@ -70,7 +70,15 @@ class QuotexAdapter(BrokerAdapter):
                     ssid=ssid)
             except Exception:
                 self.client.set_ssid = ssid
-        return await self.client.connect()
+        ok = await self.client.connect()
+        if ok:
+            # get_profile().offset vem a None nesta lib → get_server_time rebenta
+            # (timedelta seconds=NoneType). Usar timestamp local: o request_id do
+            # buy só precisa de um timestamp razoável.
+            async def _local_server_time():
+                return int(time.time())
+            self.client.get_server_time = _local_server_time
+        return ok
 
     async def set_account(self, mode):
         try:
@@ -81,6 +89,25 @@ class QuotexAdapter(BrokerAdapter):
 
     async def get_balance(self):
         return await self.client.get_balance()
+
+    async def get_profile(self):
+        """Dados da conta logada. Em modo SSID o profile da lib vem vazio,
+        então lemos os saldos do estado ws (account_balance)."""
+        bal = getattr(getattr(self.client, "api", None), "account_balance", None) or {}
+        prof = {"email": self._kw.get("email") or None,
+                "nickname": None,
+                "demo_balance": float(bal.get("demoBalance") or 0),
+                "live_balance": float(bal.get("liveBalance") or 0),
+                "tournaments": bal.get("tournamentsBalances") or {},
+                "account": self.account}
+        try:
+            p = await self.client.get_profile()
+            if p and getattr(p, "nick_name", None):
+                prof["nickname"] = p.nick_name
+                prof["profile_id"] = getattr(p, "profile_id", None)
+        except Exception:
+            pass
+        return prof
 
     async def get_candles(self, asset, period, n):
         for args in ((asset, None, n, period),

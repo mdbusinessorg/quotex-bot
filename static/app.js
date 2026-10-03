@@ -32,7 +32,7 @@ async function boot() {
   STRATS = await api("/api/strategies");
   ASSETS = await api("/api/assets");
   const opts = Object.entries(ASSETS).map(([k]) => `<option>${k}</option>`).join("");
-  ["abAsset", "mAsset", "btAsset", "anAsset"].forEach(id => { $(id).innerHTML = opts; });
+  ["abAsset", "mAsset", "btAsset", "anAsset", "chAsset"].forEach(id => { $(id).innerHTML = opts; });
   const so = Object.entries(STRATS).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join("");
   $("abStrategy").innerHTML = so;
   $("abStrategy").value = "ai_ensemble";
@@ -42,8 +42,15 @@ async function boot() {
   loadKb();
   loadHistory();
   loadAnalysis();
+  loadInsight();
+  loadPatterns();
+  loadProfile();
+  loadChart();
   refresh();
   setInterval(refresh, 2000);
+  setInterval(loadChart, 10000);
+  setInterval(loadPatterns, 15000);
+  setInterval(loadProfile, 15000);
 }
 
 document.querySelectorAll("#nav button").forEach(b => {
@@ -83,9 +90,12 @@ async function abStart() {
 }
 async function abStop() { await api("/api/autobot/stop", {}); refresh(); }
 async function manual(dir) {
-  const r = await api("/api/trades", {asset: $("mAsset").value,
-    amount: parseFloat($("mAmount").value), expiry: parseInt($("mExpiry").value), direction: dir});
-  if (!r.ok) alert(r.detail || "erro");
+  $("mErr").textContent = "";
+  try {
+    const r = await api("/api/trades", {asset: $("mAsset").value,
+      amount: parseFloat($("mAmount").value), expiry: parseInt($("mExpiry").value), direction: dir});
+    if (!r.ok) $("mErr").textContent = r.detail || "erro";
+  } catch (e) { $("mErr").textContent = "Ordem rejeitada — ver detalhe."; }
 }
 
 function renderStrats() {
@@ -215,6 +225,102 @@ async function refresh() {
       $("countdown").textContent = "—";
       $("openBody").innerHTML = "";
       $("noOpen").style.display = "block";
+    }
+  } catch (e) {}
+}
+
+// ---------------- gráfico de candles em tempo real ----------------
+async function loadChart() {
+  try {
+    const r = await api(`/api/candles/${$("chAsset").value}?period=${$("chPeriod").value}&n=100`);
+    if (!r.candles || !r.candles.length) return;
+    drawCandles(r.candles);
+  } catch (e) {}
+}
+
+function drawCandles(cds) {
+  const cv = $("chart"), ctx = cv.getContext("2d");
+  const W = cv.width = cv.clientWidth * 2, H = cv.height = 560;
+  ctx.clearRect(0, 0, W, H);
+  const n = cds.length, pad = 14, pw = W - pad * 2, ph = H - pad * 2;
+  const hi = Math.max(...cds.map(c => c.high)), lo = Math.min(...cds.map(c => c.low));
+  const span = (hi - lo) || 1;
+  const y = v => pad + (hi - v) / span * ph;
+  const cw = Math.max(2, pw / n);
+  // grid
+  ctx.strokeStyle = "#1d2536"; ctx.lineWidth = 1;
+  for (let i = 1; i < 5; i++) {
+    ctx.beginPath(); ctx.moveTo(0, pad + ph * i / 5); ctx.lineTo(W, pad + ph * i / 5); ctx.stroke();
+  }
+  ctx.font = "20px ui-monospace"; ctx.fillStyle = "#8b93a8"; ctx.textAlign = "left";
+  for (let i = 0; i <= 5; i++) {
+    const v = hi - span * i / 5;
+    ctx.fillText(v.toFixed(v > 100 ? 1 : 5), 6, y(v) - 4);
+  }
+  cds.forEach((c, i) => {
+    const x = pad + i * cw + cw * 0.15, w = cw * 0.7;
+    const up = c.close >= c.open;
+    ctx.strokeStyle = up ? "#22e58c" : "#ff5c6c";
+    ctx.fillStyle = up ? "#22e58c" : "#ff5c6c";
+    ctx.beginPath(); ctx.moveTo(x + w / 2, y(c.high)); ctx.lineTo(x + w / 2, y(c.low)); ctx.stroke();
+    const yo = y(c.open), yc = y(c.close);
+    ctx.fillRect(x, Math.min(yo, yc), w, Math.max(1.5, Math.abs(yc - yo)));
+  });
+  // preço atual
+  const last = cds[n - 1].close;
+  ctx.strokeStyle = "#7c5cff"; ctx.setLineDash([6, 4]);
+  ctx.beginPath(); ctx.moveTo(0, y(last)); ctx.lineTo(W, y(last)); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = "#7c5cff"; ctx.textAlign = "right";
+  ctx.fillText(last.toFixed(last > 100 ? 1 : 5), W - 8, y(last) - 5);
+}
+
+// ---------------- padrões ----------------
+async function loadPatterns() {
+  try {
+    const r = await api(`/api/patterns/${$("chAsset").value}?period=${$("chPeriod").value}`);
+    if (r.error) { $("patBody").innerHTML = `<div class="disc">${r.error}</div>`; return; }
+    const agg = r.aggregate;
+    $("patAgg").innerHTML = `<span class="pill ${agg === "call" ? "call" : agg === "put" ? "put" : "off"}">
+      Sinal: ${agg.toUpperCase()}</span>
+      <span class="tag">bullish ${r.bullish}</span><span class="tag">bearish ${r.bearish}</span>
+      <span class="tag">score ${r.score}</span>`;
+    $("patBody").innerHTML = (r.patterns || []).slice(-14).reverse().map(p =>
+      `<div class="pat"><b>${p.pattern}</b>
+        <span class="d"><span class="pill ${p.direction}">${p.direction.toUpperCase()}</span>
+        <span class="tag">${Math.round(p.strength * 100)}%</span></span></div>`).join("")
+      || '<div class="disc">Sem padrões agora.</div>';
+  } catch (e) {}
+}
+
+// ---------------- AI insight ----------------
+async function loadInsight() {
+  try {
+    const r = await api("/api/ai/insight/" + $("anAsset").value);
+    $("aiText").textContent = r.text || r.error || "";
+    $("aiSrc").textContent = r.source === "groq" ? "Groq AI" : "local";
+  } catch (e) {}
+}
+
+// ---------------- perfil ----------------
+async function loadProfile() {
+  try {
+    const r = await api("/api/profile");
+    $("connState").innerHTML = r.connected
+      ? '<span style="color:var(--g)">● Quotex ligada</span>'
+      : '<span style="color:var(--amber)">● modo SIM</span>';
+    if (r.connected) {
+      $("profBody").innerHTML = `
+        <div class="sig"><span class="pill real">${(r.account || "").toUpperCase()}</span></div>
+        <table style="margin-top:8px">
+          ${r.nickname ? `<tr><td>Nick</td><td><b>${r.nickname}</b></td></tr>` : ""}
+          ${r.email ? `<tr><td>Email</td><td>${r.email}</td></tr>` : ""}
+          <tr><td>Saldo DEMO</td><td class="mono win">$${Number(r.demo_balance).toFixed(2)}</td></tr>
+          <tr><td>Saldo REAL</td><td class="mono ${r.live_balance > 0 ? "win" : "loss"}">$${Number(r.live_balance).toFixed(2)}</td></tr>
+          <tr><td>Conta ativa</td><td class="mono"><b>$${Number(r.current_balance ?? 0).toFixed(2)}</b></td></tr>
+        </table>`;
+    } else {
+      $("profBody").innerHTML = `<div class="disc">Modo simulador — liga a tua conta Quotex ao lado.
+        Saldo SIM: $${Number(r.balance ?? 0).toFixed(2)}</div>`;
     }
   } catch (e) {}
 }
