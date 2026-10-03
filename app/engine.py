@@ -27,6 +27,7 @@ class Engine:
         self.autobot_on = False
         self.autobot_cfg = {}
         self.open_trades = {}        # id -> info
+        self.bad_assets = {}         # asset -> ts até quando saltar (sem preço)
         self.task = None
         self.stop_flag = asyncio.Event()
         self.state = {"last_signal": None, "phase": "IDLE", "error": None}
@@ -138,7 +139,8 @@ class Engine:
                 asset_sel = cfg.get("asset", "EURUSD_otc")
                 if asset_sel == "ALL":
                     from .broker import REAL_ASSETS
-                    assets = REAL_ASSETS
+                    assets = [a for a in REAL_ASSETS
+                              if self.bad_assets.get(a, 0) < time.time()]
                 else:
                     assets = [asset_sel]
                 # janela de análise: varre os pares de ~3 em 3s; entra IMEDIATO
@@ -187,8 +189,15 @@ class Engine:
                 if ok and best and best[0]["confidence"] >= minconf:
                     res, asset = best
                     self.state["phase"] = "TRADE OPEN"
-                    t = await self.open_trade(asset, float(cfg["amount"]),
-                                              int(cfg["expiry"]), res["signal"], sid)
+                    try:
+                        t = await self.open_trade(
+                            asset, float(cfg["amount"]),
+                            int(cfg["expiry"]), res["signal"], sid)
+                    except Exception as e:
+                        # par sem preço ao vivo (mercado fechado) → salta 1h
+                        if "price data" in str(e) or "Timeout" in str(e):
+                            self.bad_assets[asset] = time.time() + 3600
+                        raise
                     t["confidence"] = res["confidence"]
                     self.state["phase"] = "COUNTDOWN"
                     await self._watch_trade(t["id"])

@@ -180,13 +180,14 @@ ASSETS = {
     "USDCAD": 1.3580, "EURGBP": 0.8570, "BTCUSD": 67000.0, "XAUUSD": 2380.0,
 }
 
-# Pares negociáveis na Quotex (OTC corre fora de horas; ambos aceites no buy)
+# Pares negociáveis na Quotex — OTC primeiro: corre sempre (inclui fins de
+# semana, quando o forex está fechado e pares normais não têm preço ao vivo)
 REAL_ASSETS = [
+    "EURUSD_otc", "GBPUSD_otc", "USDJPY_otc", "AUDUSD_otc", "USDCAD_otc",
+    "USDCHF_otc", "EURGBP_otc", "EURJPY_otc", "GBPJPY_otc", "NZDUSD_otc",
+    "AUDCAD_otc", "AUDCHF_otc",
     "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "EURGBP",
-    "EURJPY", "GBPJPY", "NZDUSD", "AUDCAD", "AUDCHF", "EURUSD_otc",
-    "GBPUSD_otc", "USDJPY_otc", "AUDUSD_otc", "USDCAD_otc", "USDCHF_otc",
-    "EURGBP_otc", "EURJPY_otc", "GBPJPY_otc", "NZDUSD_otc", "AUDCAD_otc",
-    "AUDCHF_otc",
+    "EURJPY", "GBPJPY", "NZDUSD", "AUDCAD", "AUDCHF",
 ]
 
 # payout típico Quotex ~ 80-98%
