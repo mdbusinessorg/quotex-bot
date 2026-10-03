@@ -239,22 +239,39 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
     """Varredura em tempo real de todos os pares — sinais para entrada manual."""
     from .broker import REAL_ASSETS
     import asyncio
-    s = STRATEGIES["ai_turbo"]
+    # Precisão: sinal só aparece com confluência de estratégias independentes
+    VOTERS = ["ai_turbo", "multi_indicator", "rsi_momentum", "macd_momentum",
+              "momentum", "bible_sr", "price_action", "breakout"]
+    need = max(STRATEGIES[k]["min_candles"] for k in VOTERS) + 60
     assets = REAL_ASSETS if engine.broker.mode == "REAL" else list(ASSETS)
 
     async def scan(a):
         try:
-            cds = await engine.broker.get_candles(a, 60, s["min_candles"] + 50)
+            cds = await engine.broker.get_candles(a, 60, need)
             if not cds:
                 return None
-            r = s["fn"](cds[-(s["min_candles"] + 30):])
-            if not r["signal"]:
+            votes = {"call": 0, "put": 0}
+            confs = {"call": [], "put": []}
+            why = []
+            for k in VOTERS:
+                st = STRATEGIES[k]
+                r = st["fn"](cds[-(st["min_candles"] + 45):])
+                if not r["signal"]:
+                    continue
+                votes[r["signal"]] += 1
+                confs[r["signal"]].append(r["confidence"])
+                why.append(f"{st['name']}: {r['signal']} {r['confidence']}%")
+            sig = "call" if votes["call"] > votes["put"] else "put"
+            n = votes[sig]
+            # >=3 votos E maioria clara (o resto não pode discordar mais)
+            if n < 3 or n <= votes["put" if sig == "call" else "call"] * 2:
                 return None
-            return {"asset": a, "signal": r["signal"],
-                    "confidence": r["confidence"],
-                    "action": "COMPRAR AGORA" if r["signal"] == "call"
-                              else "VENDER AGORA",
-                    "reasons": r["reasons"][:4],
+            conf = int(sum(confs[sig]) / len(confs[sig]))
+            conf = min(96, conf + (n - 3) * 4)
+            return {"asset": a, "signal": sig, "confidence": conf,
+                    "votes": f"{n}/{len(VOTERS)}",
+                    "action": "COMPRAR AGORA" if sig == "call" else "VENDER AGORA",
+                    "reasons": why[:6],
                     "suggested_expiry": 60}
         except Exception:
             return None
