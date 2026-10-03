@@ -4,7 +4,7 @@ import os
 import urllib.request
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
-MODEL = "llama-3.3-70b-versatile"
+MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
 
 def ai_insight(asset, candles, patterns, analytics):
