@@ -35,7 +35,8 @@ STATIC = Path(__file__).resolve().parent.parent / "static"
 async def _auto_connect():
     """Se QUOTEX_SSID ou QUOTEX_EMAIL/QUOTEX_PASSWORD estiverem definidos, liga
     automaticamente ao arrancar (conta já logada)."""
-    import os
+    import os, asyncio
+    engine._main_loop = asyncio.get_running_loop()
     ssid = os.getenv("QUOTEX_SSID")
     email = os.getenv("QUOTEX_EMAIL")
     password = os.getenv("QUOTEX_PASSWORD")
