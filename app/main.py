@@ -243,7 +243,9 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
     VOTERS = ["ai_turbo", "multi_indicator", "rsi_momentum", "macd_momentum",
               "momentum", "bible_sr", "price_action", "breakout"]
     need = max(STRATEGIES[k]["min_candles"] for k in VOTERS) + 60
-    assets = REAL_ASSETS if engine.broker.mode == "REAL" else list(ASSETS)
+    import time as _t
+    assets = ([a for a in REAL_ASSETS if engine.bad_assets.get(a, 0) < _t.time()]
+              if engine.broker.mode == "REAL" else list(ASSETS))
 
     async def scan(a):
         try:
