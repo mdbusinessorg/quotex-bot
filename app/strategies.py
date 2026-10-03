@@ -236,6 +236,38 @@ def s_ai_ensemble(c):
                 "LOW" if conf > 70 else "MEDIUM")
 
 
+# 16. Candlestick Pattern Scanner — os padrões das cheatsheets
+def s_candle_patterns(c):
+    from . import patterns
+    found = patterns.detect_candle_patterns(c)
+    if not found:
+        return NO
+    score = sum((1 if p["direction"] == "call" else -1) * p["strength"] for p in found)
+    if abs(score) < 0.4:
+        return NO
+    top = sorted(found, key=lambda p: -p["strength"])[:3]
+    return _res("call" if score > 0 else "put",
+                min(85, int(40 + abs(score) * 30)),
+                [f"{p['pattern']} ({p['direction']})" for p in top],
+                "MEDIUM" if abs(score) < 1 else "LOW")
+
+
+# 17. Chart Patterns — H&S, double top/bottom, triângulos, wedges, flags
+def s_chart_patterns(c):
+    from . import patterns
+    found = patterns.detect_chart_patterns(c)
+    if not found:
+        return NO
+    score = sum((1 if p["direction"] == "call" else -1) * p["strength"] for p in found)
+    if abs(score) < 0.5:
+        return NO
+    top = sorted(found, key=lambda p: -p["strength"])[:3]
+    return _res("call" if score > 0 else "put",
+                min(85, int(45 + abs(score) * 30)),
+                [f"{p['pattern']}" for p in top],
+                "MEDIUM" if abs(score) < 1 else "LOW")
+
+
 STRATEGIES = {
     "trend_following": {"name": "Trend Following", "fn": s_trend_following,
                         "desc": "Segue a tendência definida por SMA20/SMA50 (Covel).", "min_candles": 55},
@@ -267,4 +299,12 @@ STRATEGIES = {
                  "desc": "Alterna momentum/reversão consoante o ADX.", "min_candles": 35},
     "ai_ensemble": {"name": "AI Ensemble", "fn": s_ai_ensemble,
                     "desc": "Voto ponderado de todas as estratégias.", "min_candles": 55},
+    "candle_patterns": {"name": "Candlestick Patterns", "fn": s_candle_patterns,
+                        "desc": "Scanner dos ~70 padrões de velas das cheatsheets "
+                                "(engulfing, doji, harami, stars, soldados, gaps…).",
+                        "min_candles": 20},
+    "chart_patterns": {"name": "Chart Patterns", "fn": s_chart_patterns,
+                       "desc": "Padrões gráficos: H&S, double/triple top, triângulos, "
+                               "wedges, flags, cup & handle.",
+                       "min_candles": 60},
 }

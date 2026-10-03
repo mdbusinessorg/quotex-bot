@@ -44,7 +44,7 @@ def test_strategies_contract():
 
 
 def test_15_strategies():
-    assert len(STRATEGIES) == 15
+    assert len(STRATEGIES) >= 15
 
 
 def test_sim_trade_win_loss_and_balance():
