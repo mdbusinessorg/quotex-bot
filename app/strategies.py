@@ -308,6 +308,9 @@ def s_ai_turbo(c):
     return _res(sig, conf, reasons or ["médio de scores"], "MEDIUM")
 
 
+# ---- Candlestick Trading Bible (Munehisa Homma / PDF anexado) ----
+# setups centrais: pin bar, engulfing bar, inside bar — em zonas de S/R
+
 def _sr_zone(c, look=30, tol=0.0015):
     """(near_support, near_resistance) da última vela vs extremos recentes."""
     if len(c) < look + 1:
@@ -388,7 +391,6 @@ def s_bible_sr(c):
     return NO
 
 
-
 STRATEGIES = {
     "trend_following": {"name": "Trend Following", "fn": s_trend_following,
                         "desc": "Segue a tendência definida por SMA20/SMA50 (Covel).", "min_candles": 55},
@@ -432,14 +434,17 @@ STRATEGIES = {
                  "desc": "Score contínuo RSI+MACD+EMA+momentum+velas — sempre dá "
                          "direção; feita para o ciclo 30s análise + 5s entrada.",
                  "min_candles": 40},
-    "bible_pinbar": {"name": "Bible Pin Bar S/R", "fn": s_bible_pinbar,
-                     "desc": "Pin bar a rejeitar suporte/resistencia (Candlestick Trading Bible).",
+    "bible_pinbar": {"name": "Bible: Pin Bar", "fn": s_bible_pinbar,
+                     "desc": "Pin bar a rejeitar suporte/resistência "
+                             "(Candlestick Trading Bible).", "min_candles": 35},
+    "bible_engulfing": {"name": "Bible: Engulfing", "fn": s_bible_engulfing,
+                        "desc": "Engolfo de corpo maior em zona de S/R (Bible).",
+                        "min_candles": 35},
+    "bible_inside": {"name": "Bible: Inside Bar", "fn": s_bible_inside,
+                     "desc": "Inside bar na direção da mother bar (Bible).",
                      "min_candles": 35},
-    "bible_engulfing": {"name": "Bible Engulfing S/R", "fn": s_bible_engulfing,
-                        "desc": "Engolfo no suporte/resistencia (Bible).", "min_candles": 35},
-    "bible_inside": {"name": "Bible Inside Bar", "fn": s_bible_inside,
-                     "desc": "Inside bar de continuacao (Bible).", "min_candles": 35},
-    "bible_sr": {"name": "Bible Setup + S/R", "fn": s_bible_sr,
-                 "desc": "Confluencia: padrao Bible dentro de zona S/R - alta probabilidade.",
+    "bible_sr": {"name": "Bible: S/R Setup", "fn": s_bible_sr,
+                 "desc": "Setup completo do Bible: pin/engulfing/inside bar "
+                         "em zona de suporte-resistência → entrada imediata.",
                  "min_candles": 35},
 }

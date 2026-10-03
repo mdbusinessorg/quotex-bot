@@ -33,6 +33,7 @@ async function boot() {
   ASSETS = await api("/api/assets");
   const opts = Object.entries(ASSETS).map(([k]) => `<option>${k}</option>`).join("");
   ["abAsset", "mAsset", "btAsset", "anAsset", "chAsset"].forEach(id => { $(id).innerHTML = opts; });
+  $("abAsset").innerHTML = `<option value="ALL">★ TODOS OS PARES (varredura)</option>` + opts;
   const so = Object.entries(STRATS).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join("");
   $("abStrategy").innerHTML = so;
   $("abStrategy").value = "ai_turbo";
@@ -51,6 +52,37 @@ async function boot() {
   setInterval(loadChart, 10000);
   setInterval(loadPatterns, 15000);
   setInterval(loadProfile, 15000);
+  loadSignals();
+  setInterval(loadSignals, 15000);
+}
+
+async function loadSignals() {
+  try {
+    const r = await api("/api/signals?min_conf=45");
+    $("sigScan").textContent = `${r.scanned} pares · ${new Date(r.ts * 1000).toLocaleTimeString()}`;
+    const sigs = r.signals || [];
+    $("noSig").style.display = sigs.length ? "none" : "block";
+    $("sigBody").innerHTML = sigs.slice(0, 8).map(s => `
+      <div class="card" style="border-left:3px solid ${s.signal === "call" ? "var(--g)" : "var(--r)"}">
+        <div class="row" style="align-items:center">
+          <b style="font-size:16px">${s.asset}</b>
+          <span class="pill ${s.signal}" style="font-size:13px;padding:5px 12px">${s.action}</span>
+        </div>
+        <div class="sig" style="margin-top:8px">
+          <span class="tag">conf ${s.confidence}%</span>
+          <span class="tag">expiração ${s.suggested_expiry}s</span>
+        </div>
+        <div class="disc">${s.reasons.join(" · ")}</div>
+        <button class="b ${s.signal === "call" ? "go" : "stop"}" style="margin-top:10px;width:100%"
+          onclick="enterManual('${s.asset}','${s.signal}',${s.suggested_expiry})">${s.action}</button>
+      </div>`).join("");
+  } catch (e) {}
+}
+
+async function enterManual(asset, dir, expiry) {
+  const r = await api("/api/trades", {asset, amount: parseFloat($("mAmount").value || 10),
+    expiry, direction: dir});
+  if (r.ok) { refresh(); } else { alert(r.detail || "ordem rejeitada"); }
 }
 
 document.querySelectorAll("#nav button").forEach(b => {
@@ -66,6 +98,8 @@ async function setAcc(m) {
   ACCOUNT = m;
   $("accReal").className = "b " + (m === "REAL" ? "def" : "ghost");
   $("accDemo").className = "b " + (m === "PRACTICE" ? "def" : "ghost");
+  if ($("accReal2")) $("accReal2").className = "b " + (m === "REAL" ? "def" : "ghost");
+  if ($("accDemo2")) $("accDemo2").className = "b " + (m === "PRACTICE" ? "def" : "ghost");
   $("accPill").textContent = m;
   try {
     const r = await api("/api/broker/account/" + m);
@@ -201,6 +235,7 @@ async function refresh() {
   try {
     const st = await api("/api/status");
     if (st.balance != null) $("dBalance").textContent = "$" + Number(st.balance).toFixed(2);
+    if (st.account && st.account !== ACCOUNT) setAcc(st.account);
     $("accPill").textContent = st.account;
     const s = st.summary || {};
     $("dPnl").textContent = (s.pnl >= 0 ? "+" : "") + "$" + (s.pnl ?? 0);

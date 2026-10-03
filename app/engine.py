@@ -134,38 +134,48 @@ class Engine:
                 sid = cfg.get("strategy", "ai_turbo")
                 s = STRATEGIES.get(sid, STRATEGIES.get("ai_turbo"))
                 win = int(cfg.get("analyze_sec", 30))
-                # 30s de análise: amostra o sinal de ~3 em 3s e fica com o melhor
-                self.state["phase"] = "ANALYZING 30s"
-                best = None
+                minconf = cfg.get("min_confidence", 40)
+                asset_sel = cfg.get("asset", "EURUSD_otc")
+                if asset_sel == "ALL":
+                    from .broker import REAL_ASSETS
+                    assets = REAL_ASSETS
+                else:
+                    assets = [asset_sel]
+                # janela de análise: varre os pares de ~3 em 3s; entra IMEDIATO
+                # quando um sinal passa a confiança mínima
+                best = None  # (res, asset)
                 t0 = time.time()
                 while time.time() - t0 < win and self.autobot_on:
-                    candles = await self.broker.get_candles(
-                        cfg["asset"], 60, s["min_candles"] + 50)
-                    if candles:
-                        res = s["fn"](candles[-(s["min_candles"] + 30):])
-                        if res["signal"] and (
-                                not best or res["confidence"] > best["confidence"]):
-                            best = res
-                        self.state["last_signal"] = {"asset": cfg["asset"], **res}
                     rem = int(win - (time.time() - t0))
                     self.state["phase"] = f"ANALYZING {max(0, rem)}s"
+                    for a in assets:
+                        try:
+                            candles = await self.broker.get_candles(
+                                a, 60, s["min_candles"] + 50)
+                        except Exception:
+                            continue
+                        if not candles:
+                            continue
+                        res = s["fn"](candles[-(s["min_candles"] + 30):])
+                        if res["signal"] and (
+                                not best or res["confidence"] > best[0]["confidence"]):
+                            best = (res, a)
+                            self.state["last_signal"] = {"asset": a, **res}
+                    # oportunidade encontrada → abre já
+                    if best and best[0]["confidence"] >= minconf:
+                        break
                     await asyncio.sleep(3)
                 if not self.autobot_on:
                     continue
                 self.state["phase"] = "VALIDATING"
                 ok, reason = risk.check(float(cfg["amount"]),
                                         list(self.open_trades.values()))
-                minconf = cfg.get("min_confidence", 40)
-                if ok and best and best["confidence"] >= minconf:
-                    # entra ~5s depois da janela de análise
-                    self.state["phase"] = "ENTER IN 5s"
-                    await asyncio.sleep(int(cfg.get("enter_delay", 5)))
-                    if not self.autobot_on:
-                        continue
+                if ok and best and best[0]["confidence"] >= minconf:
+                    res, asset = best
                     self.state["phase"] = "TRADE OPEN"
-                    t = await self.open_trade(cfg["asset"], float(cfg["amount"]),
-                                              int(cfg["expiry"]), best["signal"], sid)
-                    t["confidence"] = best["confidence"]
+                    t = await self.open_trade(asset, float(cfg["amount"]),
+                                              int(cfg["expiry"]), res["signal"], sid)
+                    t["confidence"] = res["confidence"]
                     self.state["phase"] = "COUNTDOWN"
                     await self._watch_trade(t["id"])
                 else:
