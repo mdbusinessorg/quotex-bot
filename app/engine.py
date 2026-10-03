@@ -60,10 +60,21 @@ class Engine:
 
     # ------------------------------------------------ execução
     async def open_trade(self, asset, amount, expiry, direction, strategy):
-        oid = await self.broker.place_order(asset, amount, direction, expiry)
+        # regista preço de entrada para WIN/LOSS real na expiração
+        entry = None
+        try:
+            cds = await asyncio.wait_for(
+                self.broker.get_candles(asset, 60, 2), timeout=15)
+            if cds:
+                entry = float(cds[-1]["close"])
+        except Exception:
+            pass
+        oid = await asyncio.wait_for(
+            self.broker.place_order(asset, amount, direction, expiry),
+            timeout=45)
         t = {"id": oid, "asset": asset, "direction": direction, "amount": amount,
              "expiry": expiry, "strategy": strategy, "account": self.account,
-             "mode": self.broker.mode, "open_ts": time.time(), "entry": None}
+             "mode": self.broker.mode, "open_ts": time.time(), "entry": entry}
         self.open_trades[oid] = t
         return t
 
@@ -72,23 +83,37 @@ class Engine:
         if not t:
             return
         # espera expiração + sonda de estado
-        while not self.stop_flag.is_set():
+        deadline = t["open_ts"] + float(t["expiry"]) + 10
+        while not self.stop_flag.is_set() and time.time() < deadline:
             st = await self.broker.get_order_status(oid)
             if st.get("state") == "closed" and st.get("result"):
                 break
-            if isinstance(st, dict) and st.get("entry") is None and st.get("asset"):
-                t["entry"] = st.get("entry")
             await asyncio.sleep(2)
         st = await self.broker.get_order_status(oid)
+        result = st.get("result")
+        exit_px = st.get("exit")
+        # resultado REAL pelo preço de saída quando temos o de entrada —
+        # o check_win da lib falha muitas vezes e marcava tudo "win"
+        if t.get("entry") is not None:
+            try:
+                cds = await asyncio.wait_for(
+                    self.broker.get_candles(t["asset"], 60, 2), timeout=15)
+                if cds:
+                    exit_px = float(cds[-1]["close"])
+                    won = (exit_px > t["entry"]) if t["direction"] == "call" \
+                        else (exit_px < t["entry"])
+                    result = "win" if won else "loss"
+            except Exception:
+                pass
         pnl = st.get("profit", st.get("pnl", 0.0)) or 0.0
-        if not pnl:  # broker real nem sempre devolve o lucro — estimar
-            if st.get("result") == "win":
+        if not pnl:
+            if result == "win":
                 pnl = round(float(t["amount"]) * 0.87, 2)
-            elif st.get("result") == "loss":
+            elif result == "loss":
                 pnl = -float(t["amount"])
         t.update({
-            "entry": st.get("entry", t.get("entry")), "exit": st.get("exit"),
-            "result": st.get("result"), "pnl": pnl,
+            "entry": st.get("entry", t.get("entry")), "exit": exit_px,
+            "result": result, "pnl": pnl,
             "close_ts": time.time(), "ts": time.time(),
         })
         self.open_trades.pop(oid, None)
@@ -150,8 +175,9 @@ class Engine:
                     self.state["phase"] = f"ANALYZING {max(0, rem)}s"
                     for a in assets:
                         try:
-                            candles = await self.broker.get_candles(
-                                a, 60, s["min_candles"] + 50)
+                            candles = await asyncio.wait_for(
+                                self.broker.get_candles(
+                                    a, 60, s["min_candles"] + 50), timeout=15)
                         except Exception:
                             continue
                         if not candles:

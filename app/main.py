@@ -255,7 +255,7 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
                     "action": "COMPRAR AGORA" if r["signal"] == "call"
                               else "VENDER AGORA",
                     "reasons": r["reasons"][:4],
-                    "suggested_expiry": 60}
+                    "suggested_expiry": 300}
         except Exception:
             return None
 
