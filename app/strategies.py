@@ -308,6 +308,89 @@ def s_ai_turbo(c):
     return _res(sig, conf, reasons or ["médio de scores"], "MEDIUM")
 
 
+# ---- Candlestick Trading Bible (Munehisa Homma / PDF anexado) ----
+# setups centrais: pin bar, engulfing bar, inside bar — em zonas de S/R
+
+def _sr_zone(c, look=30, tol=0.0015):
+    """(near_support, near_resistance) da última vela vs extremos recentes."""
+    if len(c) < look + 1:
+        return False, False
+    hi = max(x["high"] for x in c[-look:-1]); lo = min(x["low"] for x in c[-look:-1])
+    px = c[-1]["close"]
+    return px <= lo * (1 + tol) or c[-1]["low"] <= lo * (1 + tol), \
+           px >= hi * (1 - tol) or c[-1]["high"] >= hi * (1 - tol)
+
+
+def s_bible_pinbar(c):
+    last = c[-1]
+    rng = last["high"] - last["low"]
+    if not rng:
+        return NO
+    body = abs(I.body(last))
+    lower = min(last["open"], last["close"]) - last["low"]
+    upper = last["high"] - max(last["open"], last["close"])
+    ns, nr = _sr_zone(c)
+    if lower > 2.5 * body and lower > 0.6 * rng and ns:
+        return _res("call", 75, ["pin bar bullish a rejeitar suporte (Bible)"], "LOW")
+    if upper > 2.5 * body and upper > 0.6 * rng and nr:
+        return _res("put", 75, ["pin bar bearish a rejeitar resistência (Bible)"], "LOW")
+    # sem S/R ainda conta, com menos confiança
+    if lower > 3 * body and lower > 0.65 * rng:
+        return _res("call", 60, ["pin bar bullish"])
+    if upper > 3 * body and upper > 0.65 * rng:
+        return _res("put", 60, ["pin bar bearish"])
+    return NO
+
+
+def s_bible_engulfing(c):
+    if len(c) < 5:
+        return NO
+    a, b = c[-2], c[-1]
+    ns, nr = _sr_zone(c)
+    bull = I.is_bear(a) and I.is_bull(b) and \
+        b["close"] > a["open"] and b["open"] < a["close"] and \
+        abs(I.body(b)) > abs(I.body(a))
+    bear = I.is_bull(a) and I.is_bear(b) and \
+        b["close"] < a["open"] and b["open"] > a["close"] and \
+        abs(I.body(b)) > abs(I.body(a))
+    if bull and ns:
+        return _res("call", 78, ["engulfing bullish no suporte (Bible)"], "LOW")
+    if bear and nr:
+        return _res("put", 78, ["engulfing bearish na resistência (Bible)"], "LOW")
+    if bull:
+        return _res("call", 62, ["engulfing bullish"])
+    if bear:
+        return _res("put", 62, ["engulfing bearish"])
+    return NO
+
+
+def s_bible_inside(c):
+    if len(c) < 4:
+        return NO
+    m, i = c[-2], c[-1]
+    inside = i["high"] <= m["high"] and i["low"] >= m["low"]
+    if not inside:
+        return NO
+    # direção = cor da mother bar + breakout do range da mother
+    ns, nr = _sr_zone(c)
+    if I.is_bull(m) and not nr:
+        return _res("call", 58, ["inside bar após mother bullish (Bible)"])
+    if I.is_bear(m) and not ns:
+        return _res("put", 58, ["inside bar após mother bearish (Bible)"])
+    return NO
+
+
+def s_bible_sr(c):
+    """Setup completo do Bible: pin/engulfing/inside numa zona de S/R → alta conf."""
+    for fn, name in ((s_bible_pinbar, "pin"), (s_bible_engulfing, "eng"),
+                     (s_bible_inside, "ins")):
+        r = fn(c)
+        if r["signal"] and "Bible" in " ".join(r["reasons"]):
+            return _res(r["signal"], min(90, r["confidence"] + 5),
+                        [f"Bible setup ({name})"] + r["reasons"], "LOW")
+    return NO
+
+
 STRATEGIES = {
     "trend_following": {"name": "Trend Following", "fn": s_trend_following,
                         "desc": "Segue a tendência definida por SMA20/SMA50 (Covel).", "min_candles": 55},
@@ -351,4 +434,17 @@ STRATEGIES = {
                  "desc": "Score contínuo RSI+MACD+EMA+momentum+velas — sempre dá "
                          "direção; feita para o ciclo 30s análise + 5s entrada.",
                  "min_candles": 40},
+    "bible_pinbar": {"name": "Bible: Pin Bar", "fn": s_bible_pinbar,
+                     "desc": "Pin bar a rejeitar suporte/resistência "
+                             "(Candlestick Trading Bible).", "min_candles": 35},
+    "bible_engulfing": {"name": "Bible: Engulfing", "fn": s_bible_engulfing,
+                        "desc": "Engolfo de corpo maior em zona de S/R (Bible).",
+                        "min_candles": 35},
+    "bible_inside": {"name": "Bible: Inside Bar", "fn": s_bible_inside,
+                     "desc": "Inside bar na direção da mother bar (Bible).",
+                     "min_candles": 35},
+    "bible_sr": {"name": "Bible: S/R Setup", "fn": s_bible_sr,
+                 "desc": "Setup completo do Bible: pin/engulfing/inside bar "
+                         "em zona de suporte-resistência → entrada imediata.",
+                 "min_candles": 35},
 }

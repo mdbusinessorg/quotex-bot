@@ -33,6 +33,7 @@ async function boot() {
   ASSETS = await api("/api/assets");
   const opts = Object.entries(ASSETS).map(([k]) => `<option>${k}</option>`).join("");
   ["abAsset", "mAsset", "btAsset", "anAsset", "chAsset"].forEach(id => { $(id).innerHTML = opts; });
+  $("abAsset").innerHTML = `<option value="ALL">★ TODOS OS PARES (varredura)</option>` + opts;
   const so = Object.entries(STRATS).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join("");
   $("abStrategy").innerHTML = so;
   $("abStrategy").value = "ai_turbo";
@@ -66,6 +67,8 @@ async function setAcc(m) {
   ACCOUNT = m;
   $("accReal").className = "b " + (m === "REAL" ? "def" : "ghost");
   $("accDemo").className = "b " + (m === "PRACTICE" ? "def" : "ghost");
+  if ($("accReal2")) $("accReal2").className = "b " + (m === "REAL" ? "def" : "ghost");
+  if ($("accDemo2")) $("accDemo2").className = "b " + (m === "PRACTICE" ? "def" : "ghost");
   $("accPill").textContent = m;
   try {
     const r = await api("/api/broker/account/" + m);
@@ -201,6 +204,7 @@ async function refresh() {
   try {
     const st = await api("/api/status");
     if (st.balance != null) $("dBalance").textContent = "$" + Number(st.balance).toFixed(2);
+    if (st.account && st.account !== ACCOUNT) setAcc(st.account);
     $("accPill").textContent = st.account;
     const s = st.summary || {};
     $("dPnl").textContent = (s.pnl >= 0 ? "+" : "") + "$" + (s.pnl ?? 0);
