@@ -88,7 +88,11 @@ class QuotexAdapter(BrokerAdapter):
         self.account = mode
 
     async def get_balance(self):
-        return await self.client.get_balance()
+        try:
+            return await self.client.get_balance()
+        except Exception:
+            await self.reconnect()
+            return await self.client.get_balance()
 
     async def get_profile(self):
         """Dados da conta logada. Em modo SSID o profile da lib vem vazio,
@@ -122,8 +126,25 @@ class QuotexAdapter(BrokerAdapter):
                 continue
         return []
 
+    async def reconnect(self):
+        """Re-liga o cliente WS da Quotex (sessão cai silenciosamente)."""
+        try:
+            await self.client.connect()
+            return True
+        except Exception:
+            pass
+        try:
+            self.client = None
+            return await self.connect()
+        except Exception:
+            return False
+
     async def place_order(self, asset, amount, direction, expiry):
         status, info = await self.client.buy(amount, asset, direction, expiry)
+        if not status:
+            # WS morto → reconecta e tenta uma vez mais
+            await self.reconnect()
+            status, info = await self.client.buy(amount, asset, direction, expiry)
         if not status:
             raise RuntimeError(f"Ordem rejeitada: {info}")
         return info.get("id") if isinstance(info, dict) else info
