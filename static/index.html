@@ -142,10 +142,13 @@ canvas{width:100%}
         <label>Ativo</label><select id="abAsset"></select>
         <div class="row">
           <div><label>Valor ($)</label><input id="abAmount" type="number" value="10" min="1"></div>
-          <div><label>Duração</label><select id="abExpiry"><option value="60">1 min</option><option value="180">3 min</option><option value="300" selected>5 min</option><option value="600">10 min</option><option value="900">15 min</option></select></div>
+          <div><label>Duração</label><select id="abExpiry"><option value="30">30 seg</option><option value="60" selected>1 min</option><option value="120">2 min</option><option value="180">3 min</option><option value="300">5 min</option><option value="600">10 min</option><option value="900">15 min</option></select></div>
         </div>
         <label>Estratégia</label><select id="abStrategy"></select>
-        <label>Confiança mínima (%)</label><input id="abConf" type="number" value="55" min="0" max="100">
+        <div class="row">
+          <div><label>Análise (s)</label><input id="abAnalyze" type="number" value="30" min="10" max="300"></div>
+          <div><label>Confiança mínima (%)</label><input id="abConf" type="number" value="40" min="0" max="100"></div>
+        </div>
         <div class="row" style="margin-top:14px">
           <button class="b go" onclick="abStart()">▶ AUTO BOT ON</button>
           <button class="b stop" onclick="abStop()">■ PARAR</button>
@@ -164,7 +167,7 @@ canvas{width:100%}
       <div class="row">
         <div><label>Ativo</label><select id="mAsset"></select></div>
         <div><label>Valor</label><input id="mAmount" type="number" value="10"></div>
-        <div><label>Duração</label><select id="mExpiry"><option value="60">1 min</option><option value="300" selected>5 min</option></select></div>
+        <div><label>Duração</label><select id="mExpiry"><option value="30">30 seg</option><option value="60" selected>1 min</option><option value="120">2 min</option><option value="180">3 min</option><option value="300">5 min</option></select></div>
       </div>
       <div class="row" style="margin-top:10px">
         <button class="b go" onclick="manual('call')">CALL ▲</button>
@@ -176,7 +179,7 @@ canvas{width:100%}
 
   <!-- STRATEGY LAB -->
   <div class="page" id="p-strategies">
-    <h2>Strategy Lab — 17 estratégias</h2>
+    <h2>Strategy Lab — 18 estratégias</h2>
     <div class="grid g2" id="stratGrid"></div>
   </div>
 

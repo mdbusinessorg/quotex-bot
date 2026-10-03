@@ -104,6 +104,9 @@ async def status(_=Depends(auth)):
 
 @app.get("/api/assets")
 def assets(_=Depends(auth)):
+    from .broker import REAL_ASSETS
+    if engine.connected and engine.broker.mode == "REAL":
+        return REAL_ASSETS
     return list(ASSETS.keys())
 
 
@@ -144,11 +147,13 @@ def stats(_=Depends(auth)):
 
 
 class AutoCfg(BaseModel):
-    asset: str = "EURUSD"
+    asset: str = "EURUSD_otc"
     amount: float = 10
-    expiry: int = 300
-    strategy: str = "ai_ensemble"
-    min_confidence: int = 55
+    expiry: int = 60
+    strategy: str = "ai_turbo"
+    min_confidence: int = 40
+    analyze_sec: int = 30
+    enter_delay: int = 5
 
 
 @app.post("/api/autobot/start")
