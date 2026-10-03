@@ -80,9 +80,15 @@ class Engine:
                 t["entry"] = st.get("entry")
             await asyncio.sleep(2)
         st = await self.broker.get_order_status(oid)
+        pnl = st.get("profit", st.get("pnl", 0.0)) or 0.0
+        if not pnl:  # broker real nem sempre devolve o lucro — estimar
+            if st.get("result") == "win":
+                pnl = round(float(t["amount"]) * 0.87, 2)
+            elif st.get("result") == "loss":
+                pnl = -float(t["amount"])
         t.update({
             "entry": st.get("entry", t.get("entry")), "exit": st.get("exit"),
-            "result": st.get("result"), "pnl": st.get("profit", st.get("pnl", 0.0)),
+            "result": st.get("result"), "pnl": pnl,
             "close_ts": time.time(), "ts": time.time(),
         })
         self.open_trades.pop(oid, None)
