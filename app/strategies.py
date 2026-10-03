@@ -268,6 +268,46 @@ def s_chart_patterns(c):
                 "MEDIUM" if abs(score) < 1 else "LOW")
 
 
+# 18. AI Turbo — sinal por pontuação contínua (sempre dá direção; p/ ciclos de 30s)
+def s_ai_turbo(c):
+    cl = closes(c)
+    score, reasons = 0.0, []
+    r = I.rsi(cl, 14)
+    if r is not None:
+        score += (r - 50) / 50 * 1.2
+        reasons.append(f"RSI {r:.0f}")
+    m = I.macd(cl)
+    if m and m["hist"] is not None:
+        score += (1.0 if m["hist"] > 0 else -1.0) * 0.8
+        reasons.append("MACD+" if m["hist"] > 0 else "MACD-")
+    e1 = I.ema(cl, 9); e2 = I.ema(cl, 21)
+    if e1 and e2:
+        score += (1.0 if e1 > e2 else -1.0)
+        reasons.append("EMA9>21" if e1 > e2 else "EMA9<21")
+    if len(cl) >= 6:
+        mom = (cl[-1] - cl[-5]) / cl[-5]
+        score += max(-1.5, min(1.5, mom * 500))
+        reasons.append(f"mom {mom*100:+.2f}%")
+    last = c[-1]
+    if I.is_bull(last):
+        score += 0.5
+    elif I.is_bear(last):
+        score -= 0.5
+    try:
+        from . import patterns
+        found = patterns.detect_candle_patterns(c[-8:])
+        ps = sum((1 if p["direction"] == "call" else -1) * p["strength"]
+                 for p in found)
+        score += ps
+        if found:
+            reasons.append(found[-1]["pattern"])
+    except Exception:
+        pass
+    conf = int(min(95, 45 + abs(score) * 18))
+    sig = "call" if score > 0 else "put"
+    return _res(sig, conf, reasons or ["médio de scores"], "MEDIUM")
+
+
 STRATEGIES = {
     "trend_following": {"name": "Trend Following", "fn": s_trend_following,
                         "desc": "Segue a tendência definida por SMA20/SMA50 (Covel).", "min_candles": 55},
@@ -307,4 +347,8 @@ STRATEGIES = {
                        "desc": "Padrões gráficos: H&S, double/triple top, triângulos, "
                                "wedges, flags, cup & handle.",
                        "min_candles": 60},
+    "ai_turbo": {"name": "AI Turbo (35s)", "fn": s_ai_turbo,
+                 "desc": "Score contínuo RSI+MACD+EMA+momentum+velas — sempre dá "
+                         "direção; feita para o ciclo 30s análise + 5s entrada.",
+                 "min_candles": 40},
 }

@@ -35,7 +35,7 @@ async function boot() {
   ["abAsset", "mAsset", "btAsset", "anAsset", "chAsset"].forEach(id => { $(id).innerHTML = opts; });
   const so = Object.entries(STRATS).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join("");
   $("abStrategy").innerHTML = so;
-  $("abStrategy").value = "ai_ensemble";
+  $("abStrategy").value = "ai_turbo";
   $("btStrategy").innerHTML = so;
   $("hStrat").innerHTML = '<option value="">Todas estratégias</option>' + so;
   renderStrats();
@@ -62,12 +62,19 @@ document.querySelectorAll("#nav button").forEach(b => {
   };
 });
 
-function setAcc(m) {
+async function setAcc(m) {
   ACCOUNT = m;
   $("accReal").className = "b " + (m === "REAL" ? "def" : "ghost");
   $("accDemo").className = "b " + (m === "PRACTICE" ? "def" : "ghost");
   $("accPill").textContent = m;
-  api("/api/broker/account/" + m).catch(() => {});
+  try {
+    const r = await api("/api/broker/account/" + m);
+    if (r && r.balance != null)
+      $("connMsg").textContent = `Conta ${m === "REAL" ? "REAL" : "DEMO"} ativa — saldo $${Number(r.balance).toFixed(2)}`;
+    refresh(); loadProfile();
+  } catch (e) {
+    $("connMsg").textContent = "Falha ao trocar de conta.";
+  }
 }
 
 async function brokerConnect() {
@@ -85,6 +92,7 @@ async function abStart() {
     asset: $("abAsset").value, amount: parseFloat($("abAmount").value),
     expiry: parseInt($("abExpiry").value), strategy: $("abStrategy").value,
     min_confidence: parseInt($("abConf").value),
+    analyze_sec: parseInt($("abAnalyze").value || 30), enter_delay: 5,
   });
   refresh();
 }
@@ -94,7 +102,11 @@ async function manual(dir) {
   try {
     const r = await api("/api/trades", {asset: $("mAsset").value,
       amount: parseFloat($("mAmount").value), expiry: parseInt($("mExpiry").value), direction: dir});
-    if (!r.ok) $("mErr").textContent = r.detail || "erro";
+    if (!r.ok) { $("mErr").textContent = r.detail || "erro"; return; }
+    $("mErr").style.color = "var(--g)";
+    $("mErr").textContent = `Ordem aberta: ${r.trade.asset} ${dir.toUpperCase()} $${r.trade.amount} ×${r.trade.expiry}s`;
+    setTimeout(() => { $("mErr").style.color = ""; $("mErr").textContent = ""; }, 6000);
+    refresh();
   } catch (e) { $("mErr").textContent = "Ordem rejeitada — ver detalhe."; }
 }
 

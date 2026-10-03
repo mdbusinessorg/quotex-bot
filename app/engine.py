@@ -130,30 +130,48 @@ class Engine:
                 await asyncio.sleep(2)
                 continue
             try:
-                self.state["phase"] = "ANALYZING"
                 cfg = self.autobot_cfg
-                sid = cfg.get("strategy", "ai_ensemble")
-                s = STRATEGIES.get(sid)
-                candles = await self.broker.get_candles(cfg["asset"], 60, s["min_candles"] + 50)
-                if not candles:
-                    await asyncio.sleep(5)
+                sid = cfg.get("strategy", "ai_turbo")
+                s = STRATEGIES.get(sid, STRATEGIES.get("ai_turbo"))
+                win = int(cfg.get("analyze_sec", 30))
+                # 30s de análise: amostra o sinal de ~3 em 3s e fica com o melhor
+                self.state["phase"] = "ANALYZING 30s"
+                best = None
+                t0 = time.time()
+                while time.time() - t0 < win and self.autobot_on:
+                    candles = await self.broker.get_candles(
+                        cfg["asset"], 60, s["min_candles"] + 50)
+                    if candles:
+                        res = s["fn"](candles[-(s["min_candles"] + 30):])
+                        if res["signal"] and (
+                                not best or res["confidence"] > best["confidence"]):
+                            best = res
+                        self.state["last_signal"] = {"asset": cfg["asset"], **res}
+                    rem = int(win - (time.time() - t0))
+                    self.state["phase"] = f"ANALYZING {max(0, rem)}s"
+                    await asyncio.sleep(3)
+                if not self.autobot_on:
                     continue
-                res = s["fn"](candles[-(s["min_candles"] + 30):])
-                self.state["last_signal"] = {"asset": cfg["asset"], **res}
-                if res["signal"]:
-                    self.state["phase"] = "VALIDATING"
-                    ok, reason = risk.check(float(cfg["amount"]),
-                                            list(self.open_trades.values()))
-                    if ok and res["confidence"] >= cfg.get("min_confidence", 55):
-                        self.state["phase"] = "TRADE OPEN"
-                        t = await self.open_trade(cfg["asset"], float(cfg["amount"]),
-                                                  int(cfg["expiry"]), res["signal"], sid)
-                        t["confidence"] = res["confidence"]
-                        self.state["phase"] = "COUNTDOWN"
-                        await self._watch_trade(t["id"])
-                    else:
-                        self.state["phase"] = reason or "signal filtered"
-                await asyncio.sleep(2)
+                self.state["phase"] = "VALIDATING"
+                ok, reason = risk.check(float(cfg["amount"]),
+                                        list(self.open_trades.values()))
+                minconf = cfg.get("min_confidence", 40)
+                if ok and best and best["confidence"] >= minconf:
+                    # entra ~5s depois da janela de análise
+                    self.state["phase"] = "ENTER IN 5s"
+                    await asyncio.sleep(int(cfg.get("enter_delay", 5)))
+                    if not self.autobot_on:
+                        continue
+                    self.state["phase"] = "TRADE OPEN"
+                    t = await self.open_trade(cfg["asset"], float(cfg["amount"]),
+                                              int(cfg["expiry"]), best["signal"], sid)
+                    t["confidence"] = best["confidence"]
+                    self.state["phase"] = "COUNTDOWN"
+                    await self._watch_trade(t["id"])
+                else:
+                    self.state["phase"] = (
+                        reason or f"sem sinal ≥{minconf}% — novo ciclo")
+                    await asyncio.sleep(4)
             except Exception as e:
                 log.exception("autobot error")
                 self.state["error"] = str(e)
