@@ -34,7 +34,8 @@ def ai_insight(asset, candles, patterns, analytics):
                 "max_tokens": 220,
             }).encode(),
             headers={"Authorization": f"Bearer {key}",
-                     "Content-Type": "application/json"})
+                     "Content-Type": "application/json",
+                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"})
         with urllib.request.urlopen(req, timeout=15) as r:
             d = json.loads(r.read())
         return {"text": d["choices"][0]["message"]["content"].strip(),
