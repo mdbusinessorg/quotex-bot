@@ -234,6 +234,38 @@ async def patterns_ep(asset: str, period: int = 60, _=Depends(auth)):
     return patterns.scan_candles(rows)
 
 
+@app.get("/api/signals")
+async def signals_ep(min_conf: int = 50, _=Depends(auth)):
+    """Varredura em tempo real de todos os pares — sinais para entrada manual."""
+    from .broker import REAL_ASSETS
+    import asyncio
+    s = STRATEGIES["ai_turbo"]
+    assets = REAL_ASSETS if engine.broker.mode == "REAL" else list(ASSETS)
+
+    async def scan(a):
+        try:
+            cds = await engine.broker.get_candles(a, 60, s["min_candles"] + 50)
+            if not cds:
+                return None
+            r = s["fn"](cds[-(s["min_candles"] + 30):])
+            if not r["signal"]:
+                return None
+            return {"asset": a, "signal": r["signal"],
+                    "confidence": r["confidence"],
+                    "action": "COMPRAR AGORA" if r["signal"] == "call"
+                              else "VENDER AGORA",
+                    "reasons": r["reasons"][:4],
+                    "suggested_expiry": 60}
+        except Exception:
+            return None
+
+    rows = [x for x in await asyncio.gather(*[scan(a) for a in assets]) if x]
+    rows = [r for r in rows if r["confidence"] >= min_conf]
+    rows.sort(key=lambda r: -r["confidence"])
+    return {"signals": rows, "scanned": len(assets),
+            "ts": __import__("time").time()}
+
+
 @app.get("/api/ai/insight/{asset}")
 async def ai_insight_ep(asset: str, _=Depends(auth)):
     from . import patterns, ai
