@@ -30,6 +30,23 @@ logging.basicConfig(level=logging.INFO)
 app = FastAPI(title="Quotex Trading Platform")
 STATIC = Path(__file__).resolve().parent.parent / "static"
 
+
+@app.on_event("startup")
+async def _auto_connect():
+    """Se QUOTEX_SSID ou QUOTEX_EMAIL/QUOTEX_PASSWORD estiverem definidos, liga
+    automaticamente ao arrancar (conta já logada)."""
+    import os
+    ssid = os.getenv("QUOTEX_SSID")
+    email = os.getenv("QUOTEX_EMAIL")
+    password = os.getenv("QUOTEX_PASSWORD")
+    account = os.getenv("QUOTEX_ACCOUNT", "REAL")
+    if ssid or (email and password):
+        try:
+            ok, msg = await engine.connect_real(email, password, ssid, account)
+            logging.getLogger("startup").info("auto-connect: %s %s", ok, msg)
+        except Exception as e:
+            logging.getLogger("startup").warning("auto-connect falhou: %s", e)
+
 BOT_PASSWORD = os.getenv("BOT_PASSWORD", "devin")
 TOKENS = set()
 
@@ -186,4 +203,4 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000)
+    uvicorn.run("app.main:app", host="0.0.0.0", port=int(os.getenv("PORT", 8000)))

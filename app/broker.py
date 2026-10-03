@@ -46,17 +46,30 @@ class QuotexAdapter(BrokerAdapter):
     mode = "REAL"
 
     def __init__(self, email=None, password=None, ssid=None):
-        self._kw = {"lang": "pt"}
-        if ssid:
-            self._kw["set_ssid"] = ssid
-        else:
-            self._kw.update(email=email, password=password)
+        self._kw = {"lang": "pt", "email": email or "", "password": password or ""}
+        self._ssid = ssid
         self.client = None
         self.account = "REAL"
 
     async def connect(self):
-        from quotexapi.stable_api import Quotex
+        try:
+            from pyquotex.stable_api import Quotex
+        except ImportError:
+            from quotexapi.stable_api import Quotex
         self.client = Quotex(**self._kw)
+        if self._ssid:
+            ssid = self._ssid
+            if '"session"' in ssid:  # aceita a mensagem completa do websocket
+                import re, json
+                m = re.search(r'"session"\s*:\s*"([^"]+)"', ssid)
+                if m:
+                    ssid = m.group(1)
+            try:
+                self.client.set_session(
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+                    ssid=ssid)
+            except Exception:
+                self.client.set_ssid = ssid
         return await self.client.connect()
 
     async def set_account(self, mode):
@@ -70,19 +83,16 @@ class QuotexAdapter(BrokerAdapter):
         return await self.client.get_balance()
 
     async def get_candles(self, asset, period, n):
-        for name in ("get_candles", "get_candle"):
-            fn = getattr(self.client, name, None)
-            if not fn:
+        for args in ((asset, None, n, period),
+                     (asset, period, n, int(time.time())),
+                     (asset, int(time.time()) - n * period, int(time.time()), period)):
+            try:
+                rows = await self.client.get_candles(*args)
+                out = _norm(rows)
+                if out:
+                    return out
+            except Exception:
                 continue
-            for args in ((asset, period, n, int(time.time())),
-                         (asset, int(time.time()) - n * period, int(time.time()), period)):
-                try:
-                    rows = await fn(*args)
-                    out = _norm(rows)
-                    if out:
-                        return out
-                except Exception:
-                    continue
         return []
 
     async def place_order(self, asset, amount, direction, expiry):
