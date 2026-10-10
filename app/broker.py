@@ -86,15 +86,29 @@ class QuotexAdapter(BrokerAdapter):
                     os.getenv("QUOTEX_COOKIES") or "lang=pt")
         except Exception:
             pass
-        ok, msg = await self.client.connect()
+        host = self._kw["host"]
+        eps = [os.getenv("QUOTEX_WS_URL") or f"wss://ws2.{host}/socket.io/?EIO=3&transport=websocket",
+               f"wss://ws.{host}/socket.io/?EIO=3&transport=websocket"]
+        ok, msg = False, "no endpoint"
+        for ep in eps:
+            try:
+                self.client.wss_url_override = ep
+            except Exception:
+                pass
+            try:
+                ok, msg = await self.client.connect()
+            except Exception as e:
+                msg = str(e)
+            if ok:
+                break
         if not ok and self._kw.get("password"):
             # SSID expirado/rejeitado → limpar token e deixar o authenticate()
             # fazer login por email/password (cookies + SSID frescos)
             try:
                 self.client.session_data["token"] = None
-            except Exception:
-                pass
-            ok, msg = await self.client.connect()
+                ok, msg = await self.client.connect()
+            except Exception as e:
+                msg = str(e)
         if ok:
             # get_profile().offset vem a None nesta lib → get_server_time rebenta
             # (timedelta seconds=NoneType). Usar timestamp local: o request_id do
