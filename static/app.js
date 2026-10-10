@@ -81,9 +81,13 @@ async function loadSignals() {
 }
 
 async function enterManual(asset, dir, expiry) {
-  const r = await api("/api/trades", {asset, amount: parseFloat($("mAmount").value || 10),
-    expiry, direction: dir});
-  if (r.ok) { refresh(); } else { alert(r.detail || "ordem rejeitada"); }
+  const amt = parseFloat(($("mAmount") && $("mAmount").value) || 10);
+  const r = await api("/api/trades", {asset, amount: amt, expiry, direction: dir});
+  if (r.ok) {
+    refresh();
+    if ((r.mode || "").toUpperCase() === "SIM")
+      alert("Ordem SIMULADA — o bot não está ligado à tua conta Quotex. Liga em Conta & Ligação.");
+  } else { alert(r.detail || "ordem rejeitada"); }
 }
 
 document.querySelectorAll("#nav button").forEach(b => {

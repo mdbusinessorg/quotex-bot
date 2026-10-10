@@ -230,7 +230,7 @@ async def trade(b: ManualTrade, _=Depends(auth)):
         t = await engine.manual_trade(b.asset, b.amount, b.expiry, b.direction, b.strategy)
     except RuntimeError as e:
         raise HTTPException(400, str(e))
-    return {"ok": True, "trade": t}
+    return {"ok": True, "trade": t, "mode": t.get("mode")}
 
 
 @app.get("/api/trades")
