@@ -57,6 +57,10 @@ class QuotexAdapter(BrokerAdapter):
     async def connect(self):
         try:
             from pyquotex.stable_api import Quotex
+            from pyquotex.network.login import Login
+            # a lib hardcoded qxbroker.com no Login — alinhar com o host configurado
+            Login.base_url = self._kw["host"]
+            Login.https_base_url = f'https://{self._kw["host"]}'
         except ImportError:
             from quotexapi.stable_api import Quotex
         self.client = Quotex(**self._kw)
@@ -70,10 +74,19 @@ class QuotexAdapter(BrokerAdapter):
             try:
                 self.client.set_session(
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+                    cookies=os.getenv("QUOTEX_COOKIES") or None,
                     ssid=ssid)
             except Exception:
                 self.client.set_ssid = ssid
         ok = await self.client.connect()
+        if not ok and self._kw.get("password"):
+            # SSID expirado/rejeitado → limpar token e deixar o authenticate()
+            # fazer login por email/password (cookies + SSID frescos)
+            try:
+                self.client.session_data["token"] = None
+            except Exception:
+                pass
+            ok = await self.client.connect()
         if ok:
             # get_profile().offset vem a None nesta lib → get_server_time rebenta
             # (timedelta seconds=NoneType). Usar timestamp local: o request_id do
