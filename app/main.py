@@ -457,6 +457,21 @@ async def _candle_warmer():
         await asyncio.sleep(20)
 
 
+@app.get("/api/sigdiag")
+async def sigdiag(_=Depends(auth)):
+    """Diagnóstico: o que está na cache de candles por par."""
+    out = {}
+    for a, ent in CANDLE_CACHE.items():
+        cds = ent["candles"]
+        out[a] = {"src": ent.get("src"), "age_s": round(time.time() - ent["ts"], 1),
+                  "n": len(cds),
+                  "last_candle": cds[-1]["time"] if cds else None,
+                  "last_close": cds[-1]["close"] if cds else None,
+                  "first_close": cds[0]["close"] if cds else None}
+    return {"assets": out, "mode": engine.broker.mode,
+            "connected": engine.connected, "now": time.time()}
+
+
 @app.get("/api/signals")
 async def signals_ep(min_conf: int = 50, _=Depends(auth)):
     """Varredura em tempo real de todos os pares — sinais para entrada manual."""
