@@ -78,6 +78,14 @@ class QuotexAdapter(BrokerAdapter):
                     ssid=ssid)
             except Exception:
                 self.client.set_ssid = ssid
+        # Cloudflare recusa o upgrade WS com header Cookie vazio — qualquer
+        # cookie não-vazio passa (o auth vai na mensagem, não na cookie)
+        try:
+            if not self.client.session_data.get("cookies"):
+                self.client.session_data["cookies"] = (
+                    os.getenv("QUOTEX_COOKIES") or "lang=pt")
+        except Exception:
+            pass
         ok, msg = await self.client.connect()
         if not ok and self._kw.get("password"):
             # SSID expirado/rejeitado → limpar token e deixar o authenticate()
