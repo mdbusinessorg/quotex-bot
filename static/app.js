@@ -50,70 +50,42 @@ async function boot() {
   setInterval(loadPatterns, 15000);
   setInterval(loadProfile, 15000);
   loadSignals();
-  setInterval(loadSignals, 5000);
+  setInterval(loadSignals, 3000);
 }
 
 let _sigTs = 0;
-const _sigFeed = [];        // feed contínuo de sinais (mais recente primeiro)
-const _sigFeedMap = {};     // asset -> última entrada no feed
 async function loadSignals() {
   try {
     const mc = ($("sigMinConf") && $("sigMinConf").value) || 55;
     const r = await api("/api/signals?min_conf=" + mc);
     _sigTs = r.ts || Date.now() / 1000;
     $("sigScan").textContent = r.connected === false ? "bot offline (SIM)"
-      : r.warming ? "a preparar dados…" : `${r.scanned} pares varridos`;
-    const now = Date.now() / 1000;
-    // feed contínuo: nova entrada quando muda direção, passa 90s, muda
-    // confiança ≥10 ou o estado atrasa/retoma — é o "disparar" estilo SIM
-    for (const s of (r.signals || [])) {
-      const last = _sigFeedMap[s.asset];
-      if (!last || last.signal !== s.signal || now - last.ts > 90
-          || Math.abs(last.confidence - s.confidence) >= 10
-          || !!last.stale !== !!s.stale) {
-        const e = {...s, ts: now};
-        _sigFeed.unshift(e);
-        _sigFeedMap[s.asset] = e;
-      }
-    }
-    if (_sigFeed.length > 60) _sigFeed.length = 60;
-    $("noSig").style.display = _sigFeed.length ? "none" : "block";
-    $("sigBody").innerHTML = _sigFeed.slice(0, 30).map(s => {
-      const ex = s.suggested_expiry >= 60 ? (s.suggested_expiry / 60) + " min" : s.suggested_expiry + "s";
-      return `
-      <div class="sigcard ${s.signal}" ${s.watch ? 'style="opacity:.75;filter:saturate(.6)"' : ""}>
-        <span class="liveb">${s.watch ? "◌ OBSERVAÇÃO" : "● LIVE"}</span>
-        <div class="row" style="align-items:center;gap:8px">
-          <b style="font-size:15px">${s.asset}</b>
-          <span class="tag" style="font-size:10.5px">${ex}</span>
-          <span class="sigage" data-ts="${s.ts}" style="font-size:10.5px;color:var(--mut);margin-left:auto"></span>
+      : r.warming ? "a preparar dados…"
+      : `${r.scanned} pares · ${new Date(r.ts * 1000).toLocaleTimeString()}`;
+    const sigs = r.signals || [];
+    $("noSig").style.display = sigs.length ? "none" : "block";
+    $("sigBody").innerHTML = sigs.slice(0, 20).map(s => `
+      <div class="card" style="border-left:3px solid ${s.signal === "call" ? "var(--g)" : "var(--r)"}${s.watch ? ";opacity:.7" : ""}">
+        <div class="row" style="align-items:center">
+          <b style="font-size:16px">${s.asset}</b>
+          ${s.watch ? '<span class="tag" style="font-size:10.5px">OBSERVAÇÃO</span>' : ""}
+          <span class="pill ${s.signal}" style="font-size:13px;padding:5px 12px">${s.action}</span>
         </div>
-        <div class="sigdir ${s.signal}">${s.signal === "call" ? "BUY ▲" : "SELL ▼"}</div>
-        <div class="sigprice">${s.price ?? ""}${s.rsi != null ? " · RSI " + s.rsi : ""}</div>
-        <div class="confbar"><i style="width:${s.confidence}%"></i></div>
-        <div class="row" style="font-size:11px;color:var(--mut)"><span>Confiança</span><span style="text-align:right">${s.confidence}% · ${s.votes}</span></div>
-        <div class="tiles">
-          <div class="tile">Tendência<b>${s.trend}</b></div>
-          <div class="tile">Momentum<b>${s.momentum}</b></div>
-          <div class="tile">Volatilidade<b>${s.volatility}</b></div>
-          <div class="tile">Padrão<b style="font-size:10px">${s.pattern}</b></div>
+        <div class="sig" style="margin-top:8px">
+          <span class="tag">conf ${s.confidence}%</span>
+          <span class="tag">votos ${s.votes}</span>
+          <span class="tag">expiração ${s.suggested_expiry >= 60 ? (s.suggested_expiry / 60) + " min" : s.suggested_expiry + "s"}</span>
+          ${s.stale ? '<span class="tag" style="color:var(--r)">atrasado</span>' : ""}
         </div>
-        ${s.regime_ok === false ? '<div class="err" style="margin-top:8px">⚠ regime fraco</div>' : ""}
-        ${s.stale ? '<div class="err" style="margin-top:6px">⚠ dados atrasados</div>' : ""}
+        <div class="disc">${s.reasons.join(" · ")}</div>
         <button class="b ${s.signal === "call" ? "go" : "stop"}" style="margin-top:10px;width:100%"
           onclick="enterManual('${s.asset}','${s.signal}',${s.suggested_expiry})">${s.action}</button>
-        <div class="disc" style="margin-top:8px;font-size:10px">${s.reasons.slice(0, 3).join(" · ")}</div>
-      </div>`;
-    }).join("");
+      </div>`).join("");
   } catch (e) {}
 }
 setInterval(() => {
-  const now = Date.now() / 1000;
   if ($("sigAgo") && _sigTs)
-    $("sigAgo").textContent = Math.max(0, Math.round(now - _sigTs)) + "s";
-  document.querySelectorAll(".sigage").forEach(el => {
-    el.textContent = "há " + Math.max(0, Math.round(now - (+el.dataset.ts || now))) + "s";
-  });
+    $("sigAgo").textContent = Math.max(0, Math.round(Date.now() / 1000 - _sigTs)) + "s";
 }, 1000);
 
 async function enterManual(asset, dir, expiry) {

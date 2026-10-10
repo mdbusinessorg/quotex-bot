@@ -461,7 +461,7 @@ async def _candle_warmer():
 @app.get("/api/signals")
 async def signals_ep(min_conf: int = 50, _=Depends(auth)):
     """Varredura em tempo real de todos os pares — sinais para entrada manual."""
-    if SIG_CACHE["data"] and time.time() - SIG_CACHE["ts"] < 4:
+    if SIG_CACHE["data"] and time.time() - SIG_CACHE["ts"] < 2:
         return SIG_CACHE["data"]
     from .broker import REAL_ASSETS
     from . import indicators as ind, patterns as pat, regime as rg
@@ -492,9 +492,9 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
             sig = "call" if votes["call"] > votes["put"] else "put"
             n = votes[sig]
             opp = votes["put" if sig == "call" else "call"]
-            if n < 2 or n <= opp:
+            if n < 1 or n <= opp:
                 return None
-            watch = n < 3  # 2 votos = em observação; 3+ = sinal pleno
+            watch = n < 3  # <3 votos = em observação; 3+ = sinal pleno
             if confs[sig]:
                 conf = int(sum(confs[sig]) / len(confs[sig]))
                 conf = min(96, conf + (n - 3) * 4)
