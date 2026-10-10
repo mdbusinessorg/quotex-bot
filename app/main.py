@@ -563,6 +563,15 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
                 trend = "Lateral"
             aligned = (sig == "call" and rsi_v and rsi_v < 70) or \
                       (sig == "put" and rsi_v and rsi_v > 30)
+            # confirmação 1min: última vela fechada deve concordar com o sinal
+            if len(cds) >= 2:
+                lc = cds[-2]
+                last_dir = "call" if lc["close"] > lc["open"] else \
+                           "put" if lc["close"] < lc["open"] else None
+                if last_dir == sig:
+                    conf = min(96, conf + 6)
+                elif last_dir:
+                    conf = max(35, conf - 8)
             hist_ok = mc and ((sig == "call" and mc["hist"] > 0) or
                               (sig == "put" and mc["hist"] < 0))
             mom = "Forte" if (aligned and hist_ok) else \
@@ -580,7 +589,7 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
                     "pattern": pat_hit or "—",
                     "regime_ok": not blocked,
                     "stale": bool(cds and time.time() - (cds[-1]["time"] or 0) > 300),
-                    "suggested_expiry": 300}
+                    "suggested_expiry": 60}
         except Exception:
             import traceback as _tb
             LAST_SCAN_ERRS[a] = _tb.format_exc()[-400:]
