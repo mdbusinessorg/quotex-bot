@@ -161,8 +161,8 @@ class QuotexAdapter(BrokerAdapter):
         except Exception:
             pass
         # janela curta insuficiente → paginação profunda
-        return await self.get_candles_deep(asset, n * period + 120, period)[-n:] \
-            if n > 0 else await self.get_candles_deep(asset, 1800, period)
+        deep = await self.get_candles_deep(asset, n * period + 120 if n > 0 else 1800, period)
+        return deep[-n:] if n > 0 else deep
 
     async def get_candles_deep(self, asset, seconds, period=60):
         """Histórico paginado (regime/backtest — muito mais candles que a
