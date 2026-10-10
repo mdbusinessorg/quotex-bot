@@ -126,6 +126,12 @@ async def diag(_=Depends(auth)):
                 hello = await asyncio.wait_for(ws.recv(), 8)
                 rec["hello"] = str(hello[0])[:120]
                 if ssid:
+                    await ws.send_str("40")
+                    try:
+                        m40 = await asyncio.wait_for(ws.recv(), 5)
+                        rec["after40"] = str(m40[0])[:120]
+                    except Exception as e:
+                        rec["after40_err"] = str(e)[:120]
                     await ws.send_str('42["authorization",{"session":"%s","isDemo":1,"tournamentId":0}]' % ssid)
                     for _ in range(6):
                         try:
