@@ -142,7 +142,32 @@ async def diag(_=Depends(auth)):
         except Exception as e:
             rec["err"] = str(e)[:160]
         out[u] = rec
-    return {"ssid_set": bool(ssid), "tests": out}
+    libtest = {}
+    try:
+        import traceback
+        from .broker import QuotexAdapter
+        ad = QuotexAdapter(email=os.getenv("QUOTEX_EMAIL"),
+                           password=os.getenv("QUOTEX_PASSWORD"),
+                           ssid=os.getenv("QUOTEX_SSID"))
+        try:
+            res = await asyncio.wait_for(ad.connect(), 90)
+            libtest["connect"] = str(res)
+        except Exception as e:
+            libtest["connect_exc"] = f"{type(e).__name__}: {e}"
+            libtest["tb"] = traceback.format_exc()[-1500:]
+        try:
+            api = getattr(ad.client, "api", None)
+            if api is not None:
+                libtest["state"] = {
+                    "err": getattr(api.state, "websocket_error_reason", None),
+                    "auth": str(getattr(api.state, "auth_status", None)),
+                    "ssid": bool(getattr(api.state, "SSID", None)),
+                }
+        except Exception as e:
+            libtest["state_exc"] = str(e)
+    except Exception as e:
+        libtest["import_exc"] = f"{type(e).__name__}: {e}"
+    return {"ssid_set": bool(ssid), "tests": out, "lib": libtest}
 
 
 @app.get("/api/assets")
