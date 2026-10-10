@@ -54,6 +54,8 @@ async function boot() {
 }
 
 let _sigTs = 0;
+const _sigFeed = [];        // feed contínuo de sinais (mais recente primeiro)
+const _sigFeedMap = {};     // asset -> última entrada no feed
 async function loadSignals() {
   try {
     const mc = ($("sigMinConf") && $("sigMinConf").value) || 55;
@@ -61,9 +63,22 @@ async function loadSignals() {
     _sigTs = r.ts || Date.now() / 1000;
     $("sigScan").textContent = r.connected === false ? "bot offline (SIM)"
       : r.warming ? "a preparar dados…" : `${r.scanned} pares varridos`;
-    const sigs = r.signals || [];
-    $("noSig").style.display = sigs.length ? "none" : "block";
-    $("sigBody").innerHTML = sigs.slice(0, 12).map(s => {
+    const now = Date.now() / 1000;
+    // feed contínuo: nova entrada quando muda direção, passa 90s, muda
+    // confiança ≥10 ou o estado atrasa/retoma — é o "disparar" estilo SIM
+    for (const s of (r.signals || [])) {
+      const last = _sigFeedMap[s.asset];
+      if (!last || last.signal !== s.signal || now - last.ts > 90
+          || Math.abs(last.confidence - s.confidence) >= 10
+          || !!last.stale !== !!s.stale) {
+        const e = {...s, ts: now};
+        _sigFeed.unshift(e);
+        _sigFeedMap[s.asset] = e;
+      }
+    }
+    if (_sigFeed.length > 60) _sigFeed.length = 60;
+    $("noSig").style.display = _sigFeed.length ? "none" : "block";
+    $("sigBody").innerHTML = _sigFeed.slice(0, 30).map(s => {
       const ex = s.suggested_expiry >= 60 ? (s.suggested_expiry / 60) + " min" : s.suggested_expiry + "s";
       return `
       <div class="sigcard ${s.signal}" ${s.watch ? 'style="opacity:.75;filter:saturate(.6)"' : ""}>
@@ -71,6 +86,7 @@ async function loadSignals() {
         <div class="row" style="align-items:center;gap:8px">
           <b style="font-size:15px">${s.asset}</b>
           <span class="tag" style="font-size:10.5px">${ex}</span>
+          <span class="sigage" data-ts="${s.ts}" style="font-size:10.5px;color:var(--mut);margin-left:auto"></span>
         </div>
         <div class="sigdir ${s.signal}">${s.signal === "call" ? "BUY ▲" : "SELL ▼"}</div>
         <div class="sigprice">${s.price ?? ""}${s.rsi != null ? " · RSI " + s.rsi : ""}</div>
@@ -92,8 +108,12 @@ async function loadSignals() {
   } catch (e) {}
 }
 setInterval(() => {
+  const now = Date.now() / 1000;
   if ($("sigAgo") && _sigTs)
-    $("sigAgo").textContent = Math.max(0, Math.round(Date.now() / 1000 - _sigTs)) + "s";
+    $("sigAgo").textContent = Math.max(0, Math.round(now - _sigTs)) + "s";
+  document.querySelectorAll(".sigage").forEach(el => {
+    el.textContent = "há " + Math.max(0, Math.round(now - (+el.dataset.ts || now))) + "s";
+  });
 }, 1000);
 
 async function enterManual(asset, dir, expiry) {
