@@ -78,7 +78,7 @@ class QuotexAdapter(BrokerAdapter):
                     ssid=ssid)
             except Exception:
                 self.client.set_ssid = ssid
-        ok = await self.client.connect()
+        ok, msg = await self.client.connect()
         if not ok and self._kw.get("password"):
             # SSID expirado/rejeitado → limpar token e deixar o authenticate()
             # fazer login por email/password (cookies + SSID frescos)
@@ -86,7 +86,7 @@ class QuotexAdapter(BrokerAdapter):
                 self.client.session_data["token"] = None
             except Exception:
                 pass
-            ok = await self.client.connect()
+            ok, msg = await self.client.connect()
         if ok:
             # get_profile().offset vem a None nesta lib → get_server_time rebenta
             # (timedelta seconds=NoneType). Usar timestamp local: o request_id do
@@ -94,7 +94,7 @@ class QuotexAdapter(BrokerAdapter):
             async def _local_server_time():
                 return int(time.time())
             self.client.get_server_time = _local_server_time
-        return ok
+        return ok, msg
 
     async def set_account(self, mode):
         try:
@@ -151,7 +151,8 @@ class QuotexAdapter(BrokerAdapter):
             pass
         try:
             self.client = None
-            return await self.connect()
+            ok, _ = await self.connect()
+            return ok
         except Exception:
             return False
 
