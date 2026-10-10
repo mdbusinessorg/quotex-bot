@@ -383,6 +383,28 @@ def _merge_ticks(asset, ticks):
     _LAST_TICK[asset] = last
 
 
+def _sim_ticks():
+    """Sem ticks reais, mexe a vela em formação ~1x/seg para as estratégias
+    reavaliarem como no SIM — entradas renovam-se continuamente."""
+    import random
+    now = int(time.time())
+    bucket = now - now % 60
+    for a, ent in list(CANDLE_CACHE.items()):
+        cds = ent.get("candles") or []
+        if not cds:
+            continue
+        if int(cds[-1]["time"]) < bucket:
+            cds.append({"time": bucket, "open": cds[-1]["close"],
+                        "high": cds[-1]["close"], "low": cds[-1]["close"],
+                        "close": cds[-1]["close"]})
+            del cds[:-CANDLES_NEED]
+        c = cds[-1]
+        step = c["close"] * random.uniform(-0.0004, 0.0004)
+        c["close"] = round(c["close"] + step, 6)
+        c["high"] = max(c["high"], c["close"])
+        c["low"] = min(c["low"], c["close"])
+
+
 async def _tick_warmer():
     """Subscreve ticks ao vivo da Quotex — o candle corrente actualiza
     a cada segundo com o preço real (inclui OTC ao fim de semana)."""
@@ -407,6 +429,7 @@ async def _tick_warmer():
                         _merge_ticks(a, prices[a])
             else:
                 subscribed = False
+                _sim_ticks()   # sem feed real: micro-ticks na vela corrente
         except Exception as e:
             log.warning("tick warmer: %s", e)
         await asyncio.sleep(1)
@@ -578,8 +601,12 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
                   "Fraco" if aligned else "Contra"
             vol = ("Alta" if atr_pct is not None and atr_pct > 0.66 else
                    "Média" if atr_pct is not None and atr_pct > 0.33 else "Baixa")
+            candle_t = int(cds[-1]["time"]) if cds else 0
+            expires_in = max(0, candle_t + 60 - int(time.time()))
             return {"asset": a, "signal": sig, "confidence": conf,
                     "votes": f"{n}/{len(VOTERS)}",
+                    "sig_id": f"{a}-{sig}-{candle_t}",
+                    "expires_in": expires_in,
                     "action": "COMPRAR AGORA" if sig == "call" else "VENDER AGORA",
                     "reasons": why[:6],
                     "watch": watch,

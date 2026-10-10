@@ -75,6 +75,7 @@ async function loadSignals() {
           <span class="tag">conf ${s.confidence}%</span>
           <span class="tag">votos ${s.votes}</span>
           <span class="tag">expiração ${s.suggested_expiry >= 60 ? (s.suggested_expiry / 60) + " min" : s.suggested_expiry + "s"}</span>
+          ${s.expires_in != null ? `<span class="tag" style="color:var(--y)">⏱ ${s.expires_in}s</span>` : ""}
           ${s.stale ? '<span class="tag" style="color:var(--r)">atrasado</span>' : ""}
         </div>
         <div class="disc">${s.reasons.join(" · ")}</div>
