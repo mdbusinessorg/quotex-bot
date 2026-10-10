@@ -421,9 +421,8 @@ async def _public_warmer():
         try:
             async def one(a):
                 ent = CANDLE_CACHE.get(a)
-                if ent and ent.get("src") == "quotex" \
-                        and time.time() - ent["ts"] < 60:
-                    return
+                if ent and time.time() - ent["ts"] < 60:
+                    return   # fresco (quotex ou yahoo) — poupa pedidos
                 cds = await public_feed.fetch_candles(a, CANDLES_NEED)
                 if cds:
                     CANDLE_CACHE[a] = {"ts": time.time(), "candles": cds,
@@ -550,6 +549,7 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
     rows = [r for r in rows if r["confidence"] >= min_conf or r["watch"]]
     rows.sort(key=lambda r: (r["watch"], -r["confidence"]))
     SIG_CACHE["data"] = {"signals": rows, "scanned": len(assets),
+                         "cached": len(CANDLE_CACHE),
                          "warming": not CANDLE_CACHE and engine.connected,
                          "connected": engine.connected,
                          "ts": __import__("time").time()}

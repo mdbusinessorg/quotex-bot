@@ -32,11 +32,17 @@ def yahoo_symbol(asset):
 
 
 def _fetch(sym):
-    url = (f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}"
-           "?interval=1m&range=1d")
-    req = urllib.request.Request(url, headers=UA)
-    with urllib.request.urlopen(req, timeout=15) as r:
-        return json.loads(r.read())
+    last = None
+    for host in ("query1.finance.yahoo.com", "query2.finance.yahoo.com"):
+        try:
+            url = (f"https://{host}/v8/finance/chart/{sym}"
+                   "?interval=1m&range=1d")
+            req = urllib.request.Request(url, headers=UA)
+            with urllib.request.urlopen(req, timeout=15) as r:
+                return json.loads(r.read())
+        except Exception as e:
+            last = e
+    raise last or RuntimeError("fetch falhou")
 
 
 def _parse(js):
@@ -60,12 +66,16 @@ def _parse(js):
     return out
 
 
+_SEM = asyncio.Semaphore(4)   # Yahoo corta rajadas — espaçar pedidos
+
+
 async def fetch_candles(asset, n=100):
     sym = yahoo_symbol(asset)
     if not sym:
         return []
     try:
-        js = await asyncio.to_thread(_fetch, sym)
+        async with _SEM:
+            js = await asyncio.to_thread(_fetch, sym)
         return _parse(js)[-n:]
     except Exception:
         return []
