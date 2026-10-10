@@ -459,15 +459,34 @@ async def _candle_warmer():
 
 @app.get("/api/sigdiag")
 async def sigdiag(_=Depends(auth)):
-    """Diagnóstico: o que está na cache de candles por par."""
+    """Diagnóstico: cache + votos reais por par (o mesmo código do scan)."""
+    import traceback as _tb
     out = {}
+    VOTERS = ["ai_turbo", "multi_indicator", "rsi_momentum", "macd_momentum",
+              "momentum", "bible_sr", "price_action", "breakout"]
     for a, ent in CANDLE_CACHE.items():
         cds = ent["candles"]
-        out[a] = {"src": ent.get("src"), "age_s": round(time.time() - ent["ts"], 1),
-                  "n": len(cds),
-                  "last_candle": cds[-1]["time"] if cds else None,
-                  "last_close": cds[-1]["close"] if cds else None,
-                  "first_close": cds[0]["close"] if cds else None}
+        info = {"src": ent.get("src"), "age_s": round(time.time() - ent["ts"], 1),
+                "n": len(cds),
+                "last_candle": cds[-1]["time"] if cds else None,
+                "last_close": cds[-1]["close"] if cds else None}
+        try:
+            votes = {"call": 0, "put": 0}
+            errs = []
+            for k in VOTERS:
+                st = STRATEGIES[k]
+                try:
+                    r = st["fn"](cds[-(st["min_candles"] + 45):])
+                    if r["signal"]:
+                        votes[r["signal"]] += 1
+                except Exception as e:
+                    errs.append(f"{k}:{e}")
+            info["votes"] = votes
+            info["errs"] = errs[:3]
+            info["min_candles"] = {k: STRATEGIES[k]["min_candles"] for k in VOTERS}
+        except Exception as e:
+            info["scan_err"] = _tb.format_exc()[-300:]
+        out[a] = info
     return {"assets": out, "mode": engine.broker.mode,
             "connected": engine.connected, "now": time.time()}
 
