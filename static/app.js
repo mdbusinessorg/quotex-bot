@@ -32,11 +32,8 @@ async function boot() {
   STRATS = await api("/api/strategies");
   ASSETS = await api("/api/assets");
   const opts = Object.entries(ASSETS).map(([k]) => `<option>${k}</option>`).join("");
-  ["abAsset", "mAsset", "btAsset", "anAsset", "chAsset"].forEach(id => { $(id).innerHTML = opts; });
-  $("abAsset").innerHTML = `<option value="ALL">★ TODOS OS PARES (varredura)</option>` + opts;
+  ["btAsset", "anAsset", "chAsset"].forEach(id => { $(id).innerHTML = opts; });
   const so = Object.entries(STRATS).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join("");
-  $("abStrategy").innerHTML = so;
-  $("abStrategy").value = "ai_turbo";
   $("btStrategy").innerHTML = so;
   $("hStrat").innerHTML = '<option value="">Todas estratégias</option>' + so;
   renderStrats();
@@ -53,36 +50,54 @@ async function boot() {
   setInterval(loadPatterns, 15000);
   setInterval(loadProfile, 15000);
   loadSignals();
-  setInterval(loadSignals, 15000);
+  setInterval(loadSignals, 5000);
 }
 
+let _sigTs = 0;
 async function loadSignals() {
   try {
-    const r = await api("/api/signals?min_conf=45");
-    $("sigScan").textContent = `${r.scanned} pares · ${new Date(r.ts * 1000).toLocaleTimeString()}`;
+    const mc = ($("sigMinConf") && $("sigMinConf").value) || 55;
+    const r = await api("/api/signals?min_conf=" + mc);
+    _sigTs = r.ts || Date.now() / 1000;
+    $("sigScan").textContent = `${r.scanned} pares varridos`;
     const sigs = r.signals || [];
     $("noSig").style.display = sigs.length ? "none" : "block";
-    $("sigBody").innerHTML = sigs.slice(0, 8).map(s => `
-      <div class="card" style="border-left:3px solid ${s.signal === "call" ? "var(--g)" : "var(--r)"}">
-        <div class="row" style="align-items:center">
-          <b style="font-size:16px">${s.asset}</b>
-          <span class="pill ${s.signal}" style="font-size:13px;padding:5px 12px">${s.action}</span>
+    $("sigBody").innerHTML = sigs.slice(0, 12).map(s => {
+      const ex = s.suggested_expiry >= 60 ? (s.suggested_expiry / 60) + " min" : s.suggested_expiry + "s";
+      return `
+      <div class="sigcard ${s.signal}">
+        <span class="liveb">● LIVE</span>
+        <div class="row" style="align-items:center;gap:8px">
+          <b style="font-size:15px">${s.asset}</b>
+          <span class="tag" style="font-size:10.5px">${ex}</span>
         </div>
-        <div class="sig" style="margin-top:8px">
-          <span class="tag">conf ${s.confidence}%</span>
-          <span class="tag">votos ${s.votes}</span>
-          <span class="tag">expiração ${s.suggested_expiry}s</span>
+        <div class="sigdir ${s.signal}">${s.signal === "call" ? "BUY ▲" : "SELL ▼"}</div>
+        <div class="sigprice">${s.price ?? ""}${s.rsi != null ? " · RSI " + s.rsi : ""}</div>
+        <div class="confbar"><i style="width:${s.confidence}%"></i></div>
+        <div class="row" style="font-size:11px;color:var(--mut)"><span>Confiança</span><span style="text-align:right">${s.confidence}% · ${s.votes}</span></div>
+        <div class="tiles">
+          <div class="tile">Tendência<b>${s.trend}</b></div>
+          <div class="tile">Momentum<b>${s.momentum}</b></div>
+          <div class="tile">Volatilidade<b>${s.volatility}</b></div>
+          <div class="tile">Padrão<b style="font-size:10px">${s.pattern}</b></div>
         </div>
-        <div class="disc">${s.reasons.join(" · ")}</div>
+        ${s.regime_ok === false ? '<div class="err" style="margin-top:8px">⚠ regime fraco</div>' : ""}
         <button class="b ${s.signal === "call" ? "go" : "stop"}" style="margin-top:10px;width:100%"
           onclick="enterManual('${s.asset}','${s.signal}',${s.suggested_expiry})">${s.action}</button>
-      </div>`).join("");
+        <div class="disc" style="margin-top:8px;font-size:10px">${s.reasons.slice(0, 3).join(" · ")}</div>
+      </div>`;
+    }).join("");
   } catch (e) {}
 }
+setInterval(() => {
+  if ($("sigAgo") && _sigTs)
+    $("sigAgo").textContent = Math.max(0, Math.round(Date.now() / 1000 - _sigTs)) + "s";
+}, 1000);
 
 async function enterManual(asset, dir, expiry) {
-  const amt = parseFloat(($("mAmount") && $("mAmount").value) || 10);
-  const r = await api("/api/trades", {asset, amount: amt, expiry, direction: dir});
+  const amt = parseFloat(($("sigAmount") && $("sigAmount").value) || 10);
+  const exp = parseInt(($("sigExpiry") && $("sigExpiry").value) || 0) || expiry;
+  const r = await api("/api/trades", {asset, amount: amt, expiry: exp, direction: dir});
   if (r.ok) {
     refresh();
     if ((r.mode || "").toUpperCase() === "SIM")
@@ -126,39 +141,6 @@ async function brokerConnect() {
   $("connMsg").style.color = r.ok ? "var(--g)" : "var(--r)";
 }
 
-let _smap = null;
-function applyQuantum() {
-  // config validada walk-forward: bollinger@USDCAD_otc, 3min, filtro de regime
-  $("abAsset").value = "USDCAD_otc";
-  $("abExpiry").value = "180";
-  $("abStrategy").value = "bollinger";
-  $("abRegime").checked = true;
-  _smap = {USDCAD_otc: "bollinger"};
-}
-async function abStart() {
-  await api("/api/autobot/start", {
-    asset: $("abAsset").value, amount: parseFloat($("abAmount").value),
-    expiry: parseInt($("abExpiry").value), strategy: $("abStrategy").value,
-    min_confidence: parseInt($("abConf").value),
-    analyze_sec: parseInt($("abAnalyze").value || 30), enter_delay: 5,
-    regime_filter: $("abRegime").checked,
-    strategy_map: _smap,
-  });
-  refresh();
-}
-async function abStop() { await api("/api/autobot/stop", {}); refresh(); }
-async function manual(dir) {
-  $("mErr").textContent = "";
-  try {
-    const r = await api("/api/trades", {asset: $("mAsset").value,
-      amount: parseFloat($("mAmount").value), expiry: parseInt($("mExpiry").value), direction: dir});
-    if (!r.ok) { $("mErr").textContent = r.detail || "erro"; return; }
-    $("mErr").style.color = "var(--g)";
-    $("mErr").textContent = `Ordem aberta: ${r.trade.asset} ${dir.toUpperCase()} $${r.trade.amount} ×${r.trade.expiry}s`;
-    setTimeout(() => { $("mErr").style.color = ""; $("mErr").textContent = ""; }, 6000);
-    refresh();
-  } catch (e) { $("mErr").textContent = "Ordem rejeitada — ver detalhe."; }
-}
 
 function renderStrats() {
   api("/api/history/stats").then(st => {
@@ -258,10 +240,6 @@ async function refresh() {
     $("dPnl").className = "v mono " + ((s.pnl ?? 0) >= 0 ? "win" : "loss");
     $("dWr").textContent = (s.win_rate ?? 0) + "%";
     $("dOps").textContent = s.trades ?? 0;
-    $("abPill").className = "pill " + (st.autobot ? "on" : "off");
-    $("abPill").textContent = st.autobot ? "ON" : "OFF";
-    $("abPhase").textContent = st.phase;
-    $("riskMsg").textContent = st.risk?.state?.paused ? st.risk.state.pause_reason : "";
     $("rState").textContent = st.risk?.state?.paused ? st.risk.state.pause_reason : "";
     if (st.risk?.config && !$("rMaxTrade").value) {
       $("rMaxTrade").value = st.risk.config.max_amount_per_trade;
@@ -274,18 +252,15 @@ async function refresh() {
     const ls = st.last_signal;
     $("dSignal").innerHTML = ls ? `${ls.asset}: <b>${(ls.signal || "sem sinal").toUpperCase()}</b>
       <span class="tag">conf ${ls.confidence}%</span> <span class="tag">${ls.risk}</span>` : "—";
-    $("abReasons").innerHTML = (ls?.reasons || []).map(r => `<span class="tag">${r}</span>`).join("");
     // countdown do trade aberto mais antigo
     const ot = st.open_trades || [];
     if (ot.length) {
       const rem = Math.max(0, Math.round(ot[0].open_ts + ot[0].expiry - Date.now() / 1000));
       const mm = String(Math.floor(rem / 60)).padStart(2, "0"), ss = String(rem % 60).padStart(2, "0");
-      $("countdown").textContent = `${mm}:${ss}`;
       $("openBody").innerHTML = ot.map(t =>
         `<tr><td>${t.asset} ${t.direction.toUpperCase()} $${t.amount}</td><td class="mono">${t.expiry}s</td></tr>`).join("");
       $("noOpen").style.display = "none";
     } else {
-      $("countdown").textContent = "—";
       $("openBody").innerHTML = "";
       $("noOpen").style.display = "block";
     }

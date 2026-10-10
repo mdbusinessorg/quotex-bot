@@ -335,10 +335,16 @@ async def patterns_ep(asset: str, period: int = 60, _=Depends(auth)):
     return patterns.scan_candles(rows)
 
 
+SIG_CACHE = {"ts": 0.0, "data": None}
+
+
 @app.get("/api/signals")
 async def signals_ep(min_conf: int = 50, _=Depends(auth)):
     """Varredura em tempo real de todos os pares — sinais para entrada manual."""
+    if SIG_CACHE["data"] and time.time() - SIG_CACHE["ts"] < 4:
+        return SIG_CACHE["data"]
     from .broker import REAL_ASSETS
+    from . import indicators as ind, patterns as pat, regime as rg
     import asyncio
     # Precisão: sinal só aparece com confluência de estratégias independentes
     VOTERS = ["ai_turbo", "multi_indicator", "rsi_momentum", "macd_momentum",
@@ -353,6 +359,7 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
             cds = await engine.broker.get_candles(a, 60, need)
             if not cds:
                 return None
+            closes = [c["close"] for c in cds]
             votes = {"call": 0, "put": 0}
             confs = {"call": [], "put": []}
             why = []
@@ -371,10 +378,46 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
                 return None
             conf = int(sum(confs[sig]) / len(confs[sig]))
             conf = min(96, conf + (n - 3) * 4)
+
+            # --- análise por tile (estilo AI SIGNAL) ---
+            i = len(cds) - 1
+            e20 = ind.ema(closes, 20)
+            e50 = ind.ema(closes, 50)
+            rsi_v = ind.rsi(closes, 14)
+            mc = ind.macd(closes)
+            atr_pct = rg.atr_percentile(cds, i)
+            ts = rg.trend_strength(cds, i)
+            blocked = rg.no_trade_regime(cds, i)
+            pats = pat.detect_candle_patterns(cds[-8:])
+            pat_hit = next((p["name"] for p in reversed(pats)
+                            if p["direction"] == sig), None)
+            if pat_hit is None and pats:
+                pat_hit = pats[-1]["name"]
+            if e20 and e50 and e20 > e50:
+                trend = "Alta"
+            elif e20 and e50:
+                trend = "Baixa"
+            elif ts and ts > 0.5 and len(closes) > 20:
+                trend = "Alta" if closes[-1] > closes[-20] else "Baixa"
+            else:
+                trend = "Lateral"
+            aligned = (sig == "call" and rsi_v and rsi_v < 70) or \
+                      (sig == "put" and rsi_v and rsi_v > 30)
+            hist_ok = mc and ((sig == "call" and mc["hist"] > 0) or
+                              (sig == "put" and mc["hist"] < 0))
+            mom = "Forte" if (aligned and hist_ok) else \
+                  "Fraco" if aligned else "Contra"
+            vol = ("Alta" if atr_pct is not None and atr_pct > 0.66 else
+                   "Média" if atr_pct is not None and atr_pct > 0.33 else "Baixa")
             return {"asset": a, "signal": sig, "confidence": conf,
                     "votes": f"{n}/{len(VOTERS)}",
                     "action": "COMPRAR AGORA" if sig == "call" else "VENDER AGORA",
                     "reasons": why[:6],
+                    "price": round(closes[-1], 5),
+                    "rsi": round(rsi_v, 1) if rsi_v else None,
+                    "trend": trend, "momentum": mom, "volatility": vol,
+                    "pattern": pat_hit or "—",
+                    "regime_ok": not blocked,
                     "suggested_expiry": 300}
         except Exception:
             return None
@@ -382,8 +425,10 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
     rows = [x for x in await asyncio.gather(*[scan(a) for a in assets]) if x]
     rows = [r for r in rows if r["confidence"] >= min_conf]
     rows.sort(key=lambda r: -r["confidence"])
-    return {"signals": rows, "scanned": len(assets),
-            "ts": __import__("time").time()}
+    SIG_CACHE["data"] = {"signals": rows, "scanned": len(assets),
+                         "ts": __import__("time").time()}
+    SIG_CACHE["ts"] = time.time()
+    return SIG_CACHE["data"]
 
 
 @app.get("/api/ai/insight/{asset}")

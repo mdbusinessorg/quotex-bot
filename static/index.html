@@ -54,6 +54,22 @@ th{color:var(--mut);font-size:10.5px;text-transform:uppercase;font-weight:600}
 .mono{font-variant-numeric:tabular-nums;font-family:ui-monospace,Consolas,monospace}
 #countdown{font-size:36px;font-weight:800;font-variant-numeric:tabular-nums;
   background:linear-gradient(90deg,var(--a2),var(--a));-webkit-background-clip:text;background-clip:text;color:transparent}
+
+.gsig{grid-template-columns:repeat(auto-fill,minmax(235px,1fr))}
+.sigcard{border-radius:16px;padding:16px;position:relative;overflow:hidden;
+  background:linear-gradient(180deg,rgba(255,255,255,.03),transparent),var(--card);border:1px solid var(--line)}
+.sigcard.call{box-shadow:0 0 26px -8px rgba(34,229,140,.45);border-color:rgba(34,229,140,.45)}
+.sigcard.put{box-shadow:0 0 26px -8px rgba(255,92,108,.45);border-color:rgba(255,92,108,.45)}
+.sigdir{font-size:34px;font-weight:900;text-align:center;letter-spacing:1px;margin:10px 0 2px}
+.sigdir.call{color:var(--g);text-shadow:0 0 20px rgba(34,229,140,.55)}
+.sigdir.put{color:var(--r);text-shadow:0 0 20px rgba(255,92,108,.55)}
+.sigprice{text-align:center;color:var(--mut);font-size:12px}
+.confbar{height:6px;border-radius:99px;background:var(--card2);margin:12px 0 3px;overflow:hidden}
+.confbar>i{display:block;height:100%;background:linear-gradient(90deg,var(--amber),var(--g))}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px}
+.tile{background:var(--card2);border:1px solid var(--line);border-radius:9px;padding:5px 9px;font-size:10.5px;color:var(--mut)}
+.tile b{display:block;font-size:12px;margin-top:2px;color:var(--txt)}
+.liveb{position:absolute;top:12px;right:12px;font-size:10px;color:var(--g);border:1px solid rgba(34,229,140,.4);padding:2px 8px;border-radius:99px}
 .page{display:none}.page.on{display:block;animation:fade .25s}
 @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1}}
 .disc{font-size:11px;color:var(--mut);margin-top:10px}
@@ -83,10 +99,9 @@ canvas{width:100%}
 <aside>
   <div class="logo">Quotex<span>Bot</span></div>
   <nav id="nav">
-    <button data-p="dashboard" class="on">◈ Dashboard</button>
-    <button data-p="autobot">◉ Auto Bot</button>
-    <button data-p="signals">⚡ Sinais</button>
-    <button data-p="strategies">◇ Strategy Lab</button>
+    <button data-p="signals" class="on">⚡ Sinais</button>
+    <button data-p="dashboard">◈ Dashboard</button>
+        <button data-p="strategies">◇ Strategy Lab</button>
     <button data-p="backtest">◧ Backtest</button>
     <button data-p="history">≡ Histórico</button>
     <button data-p="risk">⚠ Gestão de Risco</button>
@@ -97,7 +112,7 @@ canvas{width:100%}
 </aside>
 <main>
   <!-- DASHBOARD -->
-  <div class="page on" id="p-dashboard">
+  <div class="page" id="p-dashboard">
     <h2>Dashboard</h2>
     <div class="grid g4">
       <div class="card kpi"><div class="l">Conta <span class="pill real" id="accPill" style="cursor:pointer" title="clica para trocar" onclick="setAcc(ACCOUNT==='REAL'?'PRACTICE':'REAL')">REAL</span></div><div class="v mono" id="dBalance">—</div></div>
@@ -134,64 +149,22 @@ canvas{width:100%}
     </div>
   </div>
 
-  <!-- AUTO BOT -->
-  <div class="page" id="p-autobot">
-    <h2>Auto Bot</h2>
-    <div class="grid g2">
-      <div class="card">
-        <b>Configuração</b>
-        <div class="row" style="gap:6px">
-          <button class="b def" id="accReal2" style="flex:1" onclick="setAcc('REAL')">REAL</button>
-          <button class="b ghost" id="accDemo2" style="flex:1" onclick="setAcc('PRACTICE')">DEMO</button>
-        </div>
-        <label>Ativo</label><select id="abAsset"></select>
-        <div class="row">
-          <div><label>Valor ($)</label><input id="abAmount" type="number" value="10" min="1"></div>
-          <div><label>Duração</label><select id="abExpiry"><option value="30">30 seg</option><option value="60" selected>1 min</option><option value="120">2 min</option><option value="180">3 min</option><option value="300">5 min</option><option value="600">10 min</option><option value="900">15 min</option></select></div>
-        </div>
-        <label>Estratégia</label><select id="abStrategy"></select>
-        <div class="row">
-          <div><label>Análise (s)</label><input id="abAnalyze" type="number" value="30" min="10" max="300"></div>
-          <div><label>Confiança mínima (%)</label><input id="abConf" type="number" value="40" min="0" max="100"></div>
-        </div>
-        <label class="row" style="align-items:center;gap:8px;margin-top:8px">
-          <input type="checkbox" id="abRegime" style="width:auto"> Filtro de regime <span class="disc" style="margin:0">(não opera em volatilidade média — validado walk-forward)</span>
-        </label>
-        <button class="b ghost" style="margin-top:6px" onclick="applyQuantum()">⚗ Config Quantum (bollinger@USDCAD_otc, 3min, regime)</button>
-        <div class="row" style="margin-top:14px">
-          <button class="b go" onclick="abStart()">▶ AUTO BOT ON</button>
-          <button class="b stop" onclick="abStop()">■ PARAR</button>
-        </div>
-        <div class="disc">Ao parar, não abre novas operações; as abertas terminam.</div>
-      </div>
-      <div class="card">
-        <b>Estado</b> <span class="pill off" id="abPill">OFF</span>
-        <div class="mono" id="abPhase" style="margin:12px 0;font-size:15px">IDLE</div>
-        <div id="countdown">—</div>
-        <div class="sig" id="abReasons"></div>
-        <div class="err" id="riskMsg" style="margin-top:8px"></div>
-      </div>
-    </div>
-    <div class="card"><b>Execução manual</b>
-      <div class="row">
-        <div><label>Ativo</label><select id="mAsset"></select></div>
-        <div><label>Valor</label><input id="mAmount" type="number" value="10"></div>
-        <div><label>Duração</label><select id="mExpiry"><option value="30">30 seg</option><option value="60" selected>1 min</option><option value="120">2 min</option><option value="180">3 min</option><option value="300">5 min</option></select></div>
-      </div>
-      <div class="row" style="margin-top:10px">
-        <button class="b go" onclick="manual('call')">CALL ▲</button>
-        <button class="b stop" onclick="manual('put')">PUT ▼</button>
-      </div>
-      <div class="err" id="mErr"></div>
-    </div>
-  </div>
-
   <!-- SIGNALS -->
-  <div class="page" id="p-signals">
-    <h2>Sinais em tempo real <span class="tag" id="sigScan"></span></h2>
-    <div class="disc" style="margin-bottom:10px">Para entrada manual — não interfere com o Auto Bot. COMPRAR AGORA = CALL, VENDER AGORA = PUT. Só aparece par com confluência de ≥3 estratégias. Atualiza a cada 15s.</div>
-    <div class="grid g2" id="sigBody"></div>
-    <div class="card" id="noSig" style="display:none">Sem oportunidades fortes agora — a varrer…</div>
+  <div class="page on" id="p-signals">
+    <div class="row" style="align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:10px">
+      <div style="flex:2;min-width:260px">
+        <h2 style="margin:0">⚡ Central de Sinais <span class="pill on" style="vertical-align:middle;font-size:10px">LIVE</span></h2>
+        <div class="disc" style="margin:6px 0 0">Confluência ≥3 estratégias · <span id="sigScan">a varrer…</span> · atualiza a cada 5s · última varredura há <span id="sigAgo">—</span></div>
+      </div>
+      <div class="row" style="gap:8px;max-width:560px;align-items:flex-end;flex:3">
+        <div><label>Valor</label><input id="sigAmount" type="number" value="10" min="1"></div>
+        <div><label>Expiração</label><select id="sigExpiry"><option value="0" selected>auto (5 min)</option><option value="60">1 min</option><option value="180">3 min</option><option value="300">5 min</option><option value="600">10 min</option></select></div>
+        <div><label>Conf. mín</label><select id="sigMinConf"><option value="45">45%</option><option value="55" selected>55%</option><option value="65">65%</option><option value="75">75%</option></select></div>
+        <button class="b def" onclick="loadSignals()">↻ Re-analisar</button>
+      </div>
+    </div>
+    <div class="grid gsig" id="sigBody" style="margin-top:14px"></div>
+    <div class="card" id="noSig">A varrer os pares — sem confluências fortes neste momento.</div>
   </div>
 
   <!-- STRATEGY LAB -->
