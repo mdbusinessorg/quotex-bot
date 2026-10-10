@@ -42,11 +42,27 @@ async def _auto_connect():
     password = os.getenv("QUOTEX_PASSWORD")
     account = os.getenv("QUOTEX_ACCOUNT", "REAL")
     if ssid or (email and password):
+        async def _retry():
+            log = logging.getLogger("startup")
+            for i in range(24):  # ~2h de tentativas (a cada 5 min)
+                if engine.connected:
+                    return
+                try:
+                    ok, msg = await engine.connect_real(
+                        email, password, ssid, account)
+                    log.info("auto-connect t%d: %s %s", i, ok, msg)
+                    if ok:
+                        return
+                except Exception as e:
+                    log.warning("auto-connect t%d falhou: %s", i, e)
+                await asyncio.sleep(300)
         try:
             ok, msg = await engine.connect_real(email, password, ssid, account)
             logging.getLogger("startup").info("auto-connect: %s %s", ok, msg)
         except Exception as e:
             logging.getLogger("startup").warning("auto-connect falhou: %s", e)
+        if not engine.connected:
+            asyncio.create_task(_retry())
 
 BOT_PASSWORD = os.getenv("BOT_PASSWORD", "devin")
 TOKENS = set()
