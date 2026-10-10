@@ -66,6 +66,8 @@ async def _auto_connect():
         if not engine.connected:
             asyncio.create_task(_retry())
     asyncio.create_task(_candle_warmer())
+    asyncio.create_task(_tick_warmer())
+    asyncio.create_task(_public_warmer())
 
 BOT_PASSWORD = os.getenv("BOT_PASSWORD", "devin")
 TOKENS = set()
@@ -337,32 +339,119 @@ async def patterns_ep(asset: str, period: int = 60, _=Depends(auth)):
 
 
 SIG_CACHE = {"ts": 0.0, "data": None}
-CANDLE_CACHE = {}          # asset -> {"ts": float, "candles": [...]}
+CANDLE_CACHE = {}          # asset -> {"ts": float, "candles": [...], "src": str}
 CANDLES_NEED = 100
+_LAST_TICK = {}            # asset -> último ts de tick processado
+
+
+def _target_assets():
+    """Pares a analisar — sempre os 24 reais + extras do SIM, ligado ou não
+    (o feed público cobre-os sem login)."""
+    from .broker import REAL_ASSETS
+    out = [a for a in REAL_ASSETS
+           if engine.bad_assets.get(a, 0) < time.time()]
+    out += [a for a in ASSETS if a not in out]
+    return out
+
+
+def _merge_ticks(asset, ticks):
+    """Junta ticks ao vivo à vela de 1m em formação na cache."""
+    ent = CANDLE_CACHE.get(asset)
+    if not ent:
+        return
+    cds = ent["candles"]
+    last = _LAST_TICK.get(asset, 0)
+    for tk in ticks:
+        t = int(tk["time"])
+        if t > 10_000_000_000:   # ms → s
+            t //= 1000
+        if t <= last:
+            continue
+        last = t
+        p = float(tk["price"])
+        b = t - t % 60
+        if cds and int(cds[-1]["time"]) == b:
+            c = cds[-1]
+            c["close"] = p
+            c["high"] = max(c["high"], p)
+            c["low"] = min(c["low"], p)
+        elif not cds or b > int(cds[-1]["time"]):
+            cds.append({"time": b, "open": p, "high": p,
+                        "low": p, "close": p})
+            del cds[:-CANDLES_NEED]
+    _LAST_TICK[asset] = last
+
+
+async def _tick_warmer():
+    """Subscreve ticks ao vivo da Quotex — o candle corrente actualiza
+    a cada segundo com o preço real (inclui OTC ao fim de semana)."""
+    import asyncio
+    log = logging.getLogger("tick")
+    subscribed = False
+    while True:
+        try:
+            api = getattr(getattr(engine.broker, "client", None), "api", None)
+            if engine.connected and api is not None:
+                if not subscribed:
+                    for a in _target_assets():
+                        try:
+                            await api.subscribe_realtime_candle(a, 60)
+                        except Exception:
+                            pass
+                    subscribed = True
+                    log.info("ticks subscritos")
+                prices = getattr(api, "realtime_price", None) or {}
+                for a in _target_assets():
+                    if prices.get(a):
+                        _merge_ticks(a, prices[a])
+            else:
+                subscribed = False
+        except Exception as e:
+            log.warning("tick warmer: %s", e)
+        await asyncio.sleep(1)
+
+
+async def _public_warmer():
+    """Candles 1m do Yahoo (sem login) — cobre os pares sem dados da Quotex
+    e mantém os sinais a disparar mesmo com a sessão em baixo."""
+    from . import public_feed
+    import asyncio
+    log = logging.getLogger("yfeed")
+    while True:
+        try:
+            async def one(a):
+                ent = CANDLE_CACHE.get(a)
+                if ent and ent.get("src") == "quotex" \
+                        and time.time() - ent["ts"] < 60:
+                    return
+                cds = await public_feed.fetch_candles(a, CANDLES_NEED)
+                if cds:
+                    CANDLE_CACHE[a] = {"ts": time.time(), "candles": cds,
+                                       "src": "yahoo"}
+            await asyncio.gather(*[one(a) for a in _target_assets()])
+            log.info("yahoo: %d pares na cache", len(CANDLE_CACHE))
+        except Exception as e:
+            log.warning("yahoo warmer: %s", e)
+        await asyncio.sleep(20)
 
 
 async def _candle_warmer():
     """Mantém candles frescos em background — /api/signals fica instantâneo."""
-    from .broker import REAL_ASSETS
     import asyncio
     log = logging.getLogger("warm")
     while True:
         try:
             if engine.connected:
-                import time as _t
-                assets = ([a for a in REAL_ASSETS
-                           if engine.bad_assets.get(a, 0) < _t.time()]
-                          if engine.broker.mode == "REAL" else list(ASSETS))
-
                 async def one(a):
                     try:
                         cds = await asyncio.wait_for(
                             engine.broker.get_candles(a, 60, CANDLES_NEED), 90)
                         if cds:
-                            CANDLE_CACHE[a] = {"ts": time.time(), "candles": cds}
+                            CANDLE_CACHE[a] = {"ts": time.time(), "candles": cds,
+                                               "src": "quotex"}
                     except Exception:
                         pass
-                await asyncio.gather(*[one(a) for a in assets])
+                await asyncio.gather(*[one(a) for a in _target_assets()])
                 log.info("warm: %d pares com candles", len(CANDLE_CACHE))
         except Exception as e:
             logging.getLogger("warm").warning("warmer: %s", e)
@@ -380,14 +469,12 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
     # Precisão: sinal só aparece com confluência de estratégias independentes
     VOTERS = ["ai_turbo", "multi_indicator", "rsi_momentum", "macd_momentum",
               "momentum", "bible_sr", "price_action", "breakout"]
-    import time as _t
-    assets = ([a for a in REAL_ASSETS if engine.bad_assets.get(a, 0) < _t.time()]
-              if engine.broker.mode == "REAL" else list(ASSETS))
+    assets = _target_assets()
 
     async def scan(a):
         try:
             cached = CANDLE_CACHE.get(a)
-            if not cached or time.time() - cached["ts"] >= 120:
+            if not cached or time.time() - cached["ts"] >= 300:
                 return None
             cds = cached["candles"]
             closes = [c["close"] for c in cds]
@@ -454,6 +541,7 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
                     "trend": trend, "momentum": mom, "volatility": vol,
                     "pattern": pat_hit or "—",
                     "regime_ok": not blocked,
+                    "stale": bool(cds and time.time() - (cds[-1]["time"] or 0) > 300),
                     "suggested_expiry": 300}
         except Exception:
             return None
