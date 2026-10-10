@@ -18,7 +18,21 @@ def _conn():
         amount REAL, expiry INTEGER, strategy TEXT, account TEXT,
         entry REAL, exit REAL, result TEXT, pnl REAL,
         open_ts INTEGER, close_ts INTEGER, confidence INTEGER, mode TEXT)""")
+    c.execute("CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT)")
     return c
+
+
+def kv_set(k, v):
+    conn = _conn()
+    conn.execute("INSERT OR REPLACE INTO kv VALUES (?,?)", (k, str(v)))
+    conn.commit(); conn.close()
+
+
+def kv_get(k, default=None):
+    conn = _conn()
+    r = conn.execute("SELECT v FROM kv WHERE k=?", (k,)).fetchone()
+    conn.close()
+    return r["v"] if r else default
 
 
 def record(t: dict):

@@ -37,10 +37,10 @@ async def _auto_connect():
     automaticamente ao arrancar (conta já logada)."""
     import os, asyncio
     engine._main_loop = asyncio.get_running_loop()
-    ssid = os.getenv("QUOTEX_SSID")
+    ssid = history.kv_get("ssid") or os.getenv("QUOTEX_SSID")
     email = os.getenv("QUOTEX_EMAIL")
     password = os.getenv("QUOTEX_PASSWORD")
-    account = os.getenv("QUOTEX_ACCOUNT", "REAL")
+    account = history.kv_get("account") or os.getenv("QUOTEX_ACCOUNT", "REAL")
     if ssid or (email and password):
         async def _retry():
             log = logging.getLogger("startup")
@@ -102,12 +102,17 @@ class BrokerLogin(BaseModel):
 @app.post("/api/broker/connect")
 async def broker_connect(b: BrokerLogin, _=Depends(auth)):
     ok, msg = await engine.connect_real(b.email, b.password, b.ssid, b.account)
+    if ok:
+        if b.ssid:
+            history.kv_set("ssid", b.ssid)
+        history.kv_set("account", b.account)
     return {"ok": ok, "msg": str(msg), "balance": await engine.balance()}
 
 
 @app.post("/api/broker/account/{mode}")
 async def broker_account(mode: str, _=Depends(auth)):
     await engine.set_account(mode.upper())
+    history.kv_set("account", mode.upper())
     return {"ok": True, "balance": await engine.balance()}
 
 
