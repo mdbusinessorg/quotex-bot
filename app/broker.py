@@ -11,6 +11,7 @@ Implementações:
 """
 
 import asyncio
+import os
 import random
 import time
 import uuid
@@ -46,7 +47,9 @@ class QuotexAdapter(BrokerAdapter):
     mode = "REAL"
 
     def __init__(self, email=None, password=None, ssid=None):
-        self._kw = {"lang": "pt", "email": email or "", "password": password or ""}
+        self._kw = {"lang": "pt", "email": email or "",
+                    "password": password or "",
+                    "host": os.getenv("QUOTEX_HOST", "quotex.io")}
         self._ssid = ssid
         self.client = None
         self.account = "REAL"
