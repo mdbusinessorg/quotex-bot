@@ -339,6 +339,7 @@ async def patterns_ep(asset: str, period: int = 60, _=Depends(auth)):
 
 
 SIG_CACHE = {"ts": 0.0, "data": None}
+LAST_SCAN_ERRS = {}          # asset -> última exceção no scan
 CANDLE_CACHE = {}          # asset -> {"ts": float, "candles": [...], "src": str}
 CANDLES_NEED = 100
 _LAST_TICK = {}            # asset -> último ts de tick processado
@@ -486,9 +487,12 @@ async def sigdiag(_=Depends(auth)):
             info["min_candles"] = {k: STRATEGIES[k]["min_candles"] for k in VOTERS}
         except Exception as e:
             info["scan_err"] = _tb.format_exc()[-300:]
+        if a in LAST_SCAN_ERRS:
+            info["endpoint_err"] = LAST_SCAN_ERRS[a]
         out[a] = info
     return {"assets": out, "mode": engine.broker.mode,
-            "connected": engine.connected, "now": time.time()}
+            "connected": engine.connected, "now": time.time(),
+            "scan_errs": LAST_SCAN_ERRS}
 
 
 @app.get("/api/signals")
@@ -577,6 +581,8 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
                     "stale": bool(cds and time.time() - (cds[-1]["time"] or 0) > 300),
                     "suggested_expiry": 300}
         except Exception:
+            import traceback as _tb
+            LAST_SCAN_ERRS[a] = _tb.format_exc()[-400:]
             return None
 
     rows = [x for x in await asyncio.gather(*[scan(a) for a in assets]) if x]
