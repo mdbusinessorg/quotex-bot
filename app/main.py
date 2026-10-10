@@ -65,6 +65,7 @@ async def _auto_connect():
             logging.getLogger("startup").warning("auto-connect falhou: %s", e)
         if not engine.connected:
             asyncio.create_task(_retry())
+    asyncio.create_task(_candle_warmer())
 
 BOT_PASSWORD = os.getenv("BOT_PASSWORD", "devin")
 TOKENS = set()
@@ -336,6 +337,36 @@ async def patterns_ep(asset: str, period: int = 60, _=Depends(auth)):
 
 
 SIG_CACHE = {"ts": 0.0, "data": None}
+CANDLE_CACHE = {}          # asset -> {"ts": float, "candles": [...]}
+CANDLES_NEED = 100
+
+
+async def _candle_warmer():
+    """Mantém candles frescos em background — /api/signals fica instantâneo."""
+    from .broker import REAL_ASSETS
+    import asyncio
+    log = logging.getLogger("warm")
+    while True:
+        try:
+            if engine.connected:
+                import time as _t
+                assets = ([a for a in REAL_ASSETS
+                           if engine.bad_assets.get(a, 0) < _t.time()]
+                          if engine.broker.mode == "REAL" else list(ASSETS))
+
+                async def one(a):
+                    try:
+                        cds = await asyncio.wait_for(
+                            engine.broker.get_candles(a, 60, CANDLES_NEED), 90)
+                        if cds:
+                            CANDLE_CACHE[a] = {"ts": time.time(), "candles": cds}
+                    except Exception:
+                        pass
+                await asyncio.gather(*[one(a) for a in assets])
+                log.info("warm: %d pares com candles", len(CANDLE_CACHE))
+        except Exception as e:
+            logging.getLogger("warm").warning("warmer: %s", e)
+        await asyncio.sleep(20)
 
 
 @app.get("/api/signals")
@@ -349,14 +380,17 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
     # Precisão: sinal só aparece com confluência de estratégias independentes
     VOTERS = ["ai_turbo", "multi_indicator", "rsi_momentum", "macd_momentum",
               "momentum", "bible_sr", "price_action", "breakout"]
-    need = max(STRATEGIES[k]["min_candles"] for k in VOTERS) + 60
     import time as _t
     assets = ([a for a in REAL_ASSETS if engine.bad_assets.get(a, 0) < _t.time()]
               if engine.broker.mode == "REAL" else list(ASSETS))
 
     async def scan(a):
         try:
-            cds = await engine.broker.get_candles(a, 60, need)
+            cached = CANDLE_CACHE.get(a)
+            if cached and time.time() - cached["ts"] < 120:
+                cds = cached["candles"]
+            else:
+                cds = await engine.broker.get_candles(a, 60, CANDLES_NEED)
             if not cds:
                 return None
             closes = [c["close"] for c in cds]
