@@ -387,12 +387,9 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
     async def scan(a):
         try:
             cached = CANDLE_CACHE.get(a)
-            if cached and time.time() - cached["ts"] < 120:
-                cds = cached["candles"]
-            else:
-                cds = await engine.broker.get_candles(a, 60, CANDLES_NEED)
-            if not cds:
+            if not cached or time.time() - cached["ts"] >= 120:
                 return None
+            cds = cached["candles"]
             closes = [c["close"] for c in cds]
             votes = {"call": 0, "put": 0}
             confs = {"call": [], "put": []}
@@ -465,6 +462,8 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
     rows = [r for r in rows if r["confidence"] >= min_conf or r["watch"]]
     rows.sort(key=lambda r: (r["watch"], -r["confidence"]))
     SIG_CACHE["data"] = {"signals": rows, "scanned": len(assets),
+                         "warming": not CANDLE_CACHE and engine.connected,
+                         "connected": engine.connected,
                          "ts": __import__("time").time()}
     SIG_CACHE["ts"] = time.time()
     return SIG_CACHE["data"]

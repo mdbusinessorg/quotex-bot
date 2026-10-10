@@ -59,7 +59,8 @@ async function loadSignals() {
     const mc = ($("sigMinConf") && $("sigMinConf").value) || 55;
     const r = await api("/api/signals?min_conf=" + mc);
     _sigTs = r.ts || Date.now() / 1000;
-    $("sigScan").textContent = `${r.scanned} pares varridos`;
+    $("sigScan").textContent = r.connected === false ? "bot offline (SIM)"
+      : r.warming ? "a preparar dados…" : `${r.scanned} pares varridos`;
     const sigs = r.signals || [];
     $("noSig").style.display = sigs.length ? "none" : "block";
     $("sigBody").innerHTML = sigs.slice(0, 12).map(s => {
