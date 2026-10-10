@@ -113,15 +113,17 @@ async def diag(_=Depends(auth)):
         return {"error": f"curl_cffi em falta: {e}"}
     ssid = os.getenv("QUOTEX_SSID", "")
     urls = [
-        "wss://ws2.quotex.io/socket.io/?EIO=3&transport=websocket",
-        "wss://ws2.quotex.io/socket.io/?EIO=4&transport=websocket",
-        "wss://quotex.io/socket.io/?EIO=3&transport=websocket",
+        "wss://ws2.quotex.com/socket.io/?EIO=3&transport=websocket",
+        "wss://ws2.quotex.com/socket.io/?EIO=4&transport=websocket",
     ]
     for u in urls:
         rec = {"msgs": []}
         try:
             s = AsyncSession(impersonate="chrome")
-            ws = await s.ws_connect(u, timeout=15)
+            ws = await s.ws_connect(u, timeout=15, headers={
+                "Origin": "https://quotex.com",
+                "Referer": "https://quotex.com/pt/trade",
+                "Cookie": "lang=pt"})
             try:
                 hello = await asyncio.wait_for(ws.recv(), 8)
                 rec["hello"] = str(hello[0])[:120]
