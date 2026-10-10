@@ -83,6 +83,7 @@ async function loadSignals() {
           <div class="tile">Padrão<b style="font-size:10px">${s.pattern}</b></div>
         </div>
         ${s.regime_ok === false ? '<div class="err" style="margin-top:8px">⚠ regime fraco</div>' : ""}
+        ${s.stale ? '<div class="err" style="margin-top:6px">⚠ dados atrasados</div>' : ""}
         <button class="b ${s.signal === "call" ? "go" : "stop"}" style="margin-top:10px;width:100%"
           onclick="enterManual('${s.asset}','${s.signal}',${s.suggested_expiry})">${s.action}</button>
         <div class="disc" style="margin-top:8px;font-size:10px">${s.reasons.slice(0, 3).join(" · ")}</div>
