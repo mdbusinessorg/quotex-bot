@@ -44,18 +44,20 @@ async def _auto_connect():
     if ssid or (email and password):
         async def _retry():
             log = logging.getLogger("startup")
-            for i in range(24):  # ~2h de tentativas (a cada 5 min)
-                if engine.connected:
-                    return
+            i = 0
+            while not engine.connected:  # tenta sempre, 10 min — ban Cloudflare levanta sozinho
+                i += 1
                 try:
                     ok, msg = await engine.connect_real(
-                        email, password, ssid, account)
+                        email, password,
+                        history.kv_get("ssid") or ssid,
+                        history.kv_get("account") or account)
                     log.info("auto-connect t%d: %s %s", i, ok, msg)
                     if ok:
                         return
                 except Exception as e:
                     log.warning("auto-connect t%d falhou: %s", i, e)
-                await asyncio.sleep(300)
+                await asyncio.sleep(600)
         try:
             ok, msg = await engine.connect_real(email, password, ssid, account)
             logging.getLogger("startup").info("auto-connect: %s %s", ok, msg)
