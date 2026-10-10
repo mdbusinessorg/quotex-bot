@@ -17,6 +17,7 @@ UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
 # símbolos Yahoo para activos que não são forex de 6 letras
 _SPECIAL = {
     "BTCUSD": "BTC-USD", "ETHUSD": "ETH-USD", "LTCUSD": "LTC-USD",
+    "XRPUSD": "XRP-USD", "SOLUSD": "SOL-USD", "DOGEUSD": "DOGE-USD",
     "XAUUSD": "GC=F", "XAGUSD": "SI=F",
 }
 

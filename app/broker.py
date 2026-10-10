@@ -232,11 +232,18 @@ ASSETS = {
 # Pares negociáveis na Quotex — OTC primeiro: corre sempre (inclui fins de
 # semana, quando o forex está fechado e pares normais não têm preço ao vivo)
 REAL_ASSETS = [
+    # crypto — mercado 24/7, sempre com candles vivos (inclui fins de semana)
+    "BTCUSD_otc", "ETHUSD_otc", "XRPUSD_otc", "SOLUSD_otc", "LTCUSD_otc",
+    "DOGEUSD_otc",
+    "BTCUSD", "ETHUSD", "XRPUSD", "SOLUSD", "LTCUSD", "DOGEUSD",
+    # forex OTC
     "EURUSD_otc", "GBPUSD_otc", "USDJPY_otc", "AUDUSD_otc", "USDCAD_otc",
     "USDCHF_otc", "EURGBP_otc", "EURJPY_otc", "GBPJPY_otc", "NZDUSD_otc",
     "AUDCAD_otc", "AUDCHF_otc",
+    # forex
     "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "EURGBP",
     "EURJPY", "GBPJPY", "NZDUSD", "AUDCAD", "AUDCHF",
+    "XAUUSD",
 ]
 
 # payout típico Quotex ~ 80-98%
