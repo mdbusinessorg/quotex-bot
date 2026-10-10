@@ -102,6 +102,49 @@ async def status(_=Depends(auth)):
     return st
 
 
+@app.get("/api/diag")
+async def diag(_=Depends(auth)):
+    """Testa o handshake WS e a autorização SSID na Quotex; devolve as mensagens cruas do servidor."""
+    import asyncio
+    out = {}
+    try:
+        from curl_cffi.requests import AsyncSession
+    except ImportError as e:
+        return {"error": f"curl_cffi em falta: {e}"}
+    ssid = os.getenv("QUOTEX_SSID", "")
+    urls = [
+        "wss://ws2.quotex.io/socket.io/?EIO=3&transport=websocket",
+        "wss://ws2.quotex.io/socket.io/?EIO=4&transport=websocket",
+        "wss://quotex.io/socket.io/?EIO=3&transport=websocket",
+    ]
+    for u in urls:
+        rec = {"msgs": []}
+        try:
+            s = AsyncSession(impersonate="chrome")
+            ws = await s.ws_connect(u, timeout=15)
+            try:
+                hello = await asyncio.wait_for(ws.recv(), 8)
+                rec["hello"] = str(hello[0])[:120]
+                if ssid:
+                    await ws.send_str('42["authorization",{"session":"%s","isDemo":1,"tournamentId":0}]' % ssid)
+                    for _ in range(6):
+                        try:
+                            m = await asyncio.wait_for(ws.recv(), 6)
+                            rec["msgs"].append(str(m[0])[:200])
+                            if "uthoriz" in str(m[0]) or "eject" in str(m[0]):
+                                break
+                        except Exception as e:
+                            rec["msgs"].append(f"recv-timeout/err: {e}")
+                            break
+                await ws.close()
+            except Exception as e:
+                rec["after_hello_err"] = str(e)[:160]
+        except Exception as e:
+            rec["err"] = str(e)[:160]
+        out[u] = rec
+    return {"ssid_set": bool(ssid), "tests": out}
+
+
 @app.get("/api/assets")
 def assets(_=Depends(auth)):
     from .broker import REAL_ASSETS
