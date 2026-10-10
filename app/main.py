@@ -345,13 +345,11 @@ _LAST_TICK = {}            # asset -> último ts de tick processado
 
 
 def _target_assets():
-    """Pares a analisar — sempre os 24 reais + extras do SIM, ligado ou não
-    (o feed público cobre-os sem login)."""
     from .broker import REAL_ASSETS
-    out = [a for a in REAL_ASSETS
-           if engine.bad_assets.get(a, 0) < time.time()]
-    out += [a for a in ASSETS if a not in out]
-    return out
+    if engine.broker.mode == "REAL":
+        return [a for a in REAL_ASSETS
+                if engine.bad_assets.get(a, 0) < time.time()]
+    return list(ASSETS)
 
 
 def _merge_ticks(asset, ticks):
@@ -469,7 +467,9 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
     # Precisão: sinal só aparece com confluência de estratégias independentes
     VOTERS = ["ai_turbo", "multi_indicator", "rsi_momentum", "macd_momentum",
               "momentum", "bible_sr", "price_action", "breakout"]
-    assets = _target_assets()
+    import time as _t
+    assets = ([a for a in REAL_ASSETS if engine.bad_assets.get(a, 0) < _t.time()]
+              if engine.broker.mode == "REAL" else list(ASSETS))
 
     async def scan(a):
         try:
