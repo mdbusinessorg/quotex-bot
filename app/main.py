@@ -548,10 +548,11 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
             ts = rg.trend_strength(cds, i)
             blocked = rg.no_trade_regime(cds, i)
             pats = pat.detect_candle_patterns(cds[-8:])
-            pat_hit = next((p["name"] for p in reversed(pats)
-                            if p["direction"] == sig), None)
+            pat_hit = next((p.get("pattern") or p.get("name")
+                            for p in reversed(pats)
+                            if p.get("direction") == sig), None)
             if pat_hit is None and pats:
-                pat_hit = pats[-1]["name"]
+                pat_hit = pats[-1].get("pattern") or pats[-1].get("name")
             if e20 and e50 and e20 > e50:
                 trend = "Alta"
             elif e20 and e50:
