@@ -154,6 +154,10 @@ canvas{width:100%}
           <div><label>Análise (s)</label><input id="abAnalyze" type="number" value="30" min="10" max="300"></div>
           <div><label>Confiança mínima (%)</label><input id="abConf" type="number" value="40" min="0" max="100"></div>
         </div>
+        <label class="row" style="align-items:center;gap:8px;margin-top:8px">
+          <input type="checkbox" id="abRegime" style="width:auto"> Filtro de regime <span class="disc" style="margin:0">(não opera em volatilidade média — validado walk-forward)</span>
+        </label>
+        <button class="b ghost" style="margin-top:6px" onclick="applyQuantum()">⚗ Config Quantum (bollinger@USDCAD_otc, 3min, regime)</button>
         <div class="row" style="margin-top:14px">
           <button class="b go" onclick="abStart()">▶ AUTO BOT ON</button>
           <button class="b stop" onclick="abStop()">■ PARAR</button>

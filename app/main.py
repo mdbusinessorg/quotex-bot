@@ -246,6 +246,8 @@ class AutoCfg(BaseModel):
     min_confidence: int = 40
     analyze_sec: int = 30
     enter_delay: int = 5
+    regime_filter: bool = False
+    strategy_map: dict[str, str] | None = None
 
 
 @app.post("/api/autobot/start")

@@ -15,6 +15,7 @@ from . import history
 from .broker import BrokerAdapter, QuotexAdapter, SimAdapter
 from .risk import risk
 from .strategies import STRATEGIES
+from .regime import no_trade_regime
 
 log = logging.getLogger("engine")
 
@@ -161,8 +162,15 @@ class Engine:
                 s = STRATEGIES.get(sid, STRATEGIES.get("ai_turbo"))
                 win = int(cfg.get("analyze_sec", 30))
                 minconf = cfg.get("min_confidence", 40)
+                regime_f = bool(cfg.get("regime_filter"))
                 asset_sel = cfg.get("asset", "EURUSD_otc")
-                if asset_sel == "ALL":
+                # strategy_map: {asset: sid} — routing por par validado no
+                # walk-forward (ex.: {"USDCAD_otc": "bollinger"})
+                smap = cfg.get("strategy_map") or {}
+                if smap:
+                    assets = [a for a in smap
+                              if self.bad_assets.get(a, 0) < time.time()]
+                elif asset_sel == "ALL":
                     from .broker import REAL_ASSETS
                     assets = [a for a in REAL_ASSETS
                               if self.bad_assets.get(a, 0) < time.time()]
@@ -181,16 +189,23 @@ class Engine:
                         try:
                             candles = await asyncio.wait_for(
                                 self.broker.get_candles(
-                                    a, 60, s["min_candles"] + 50), timeout=15)
+                                    a, 60,
+                                    (max(s["min_candles"] + 50, 560)
+                                     if regime_f else s["min_candles"] + 50)),
+                                timeout=15 if not regime_f else 60)
                         except Exception:
                             continue
                         if not candles:
                             continue
                         got += 1
-                        res = s["fn"](candles[-(s["min_candles"] + 30):])
+                        sa = STRATEGIES.get(smap.get(a, sid), s)
+                        if regime_f and no_trade_regime(candles,
+                                                        len(candles) - 1):
+                            continue
+                        res = sa["fn"](candles[-(sa["min_candles"] + 30):])
                         if res["signal"] and (
                                 not best or res["confidence"] > best[0]["confidence"]):
-                            best = (res, a)
+                            best = (res, a, smap.get(a, sid))
                             self.state["last_signal"] = {"asset": a, **res}
                     # oportunidade encontrada → abre já
                     if best and best[0]["confidence"] >= minconf:
@@ -213,12 +228,12 @@ class Engine:
                 ok, reason = risk.check(float(cfg["amount"]),
                                         list(self.open_trades.values()))
                 if ok and best and best[0]["confidence"] >= minconf:
-                    res, asset = best
+                    res, asset, used_sid = best
                     self.state["phase"] = "TRADE OPEN"
                     try:
                         t = await self.open_trade(
                             asset, float(cfg["amount"]),
-                            int(cfg["expiry"]), res["signal"], sid)
+                            int(cfg["expiry"]), res["signal"], used_sid)
                     except Exception as e:
                         # par sem preço ao vivo (mercado fechado) → salta 1h
                         if "price data" in str(e) or "Timeout" in str(e):

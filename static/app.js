@@ -122,12 +122,23 @@ async function brokerConnect() {
   $("connMsg").style.color = r.ok ? "var(--g)" : "var(--r)";
 }
 
+let _smap = null;
+function applyQuantum() {
+  // config validada walk-forward: bollinger@USDCAD_otc, 3min, filtro de regime
+  $("abAsset").value = "USDCAD_otc";
+  $("abExpiry").value = "180";
+  $("abStrategy").value = "bollinger";
+  $("abRegime").checked = true;
+  _smap = {USDCAD_otc: "bollinger"};
+}
 async function abStart() {
   await api("/api/autobot/start", {
     asset: $("abAsset").value, amount: parseFloat($("abAmount").value),
     expiry: parseInt($("abExpiry").value), strategy: $("abStrategy").value,
     min_confidence: parseInt($("abConf").value),
     analyze_sec: parseInt($("abAnalyze").value || 30), enter_delay: 5,
+    regime_filter: $("abRegime").checked,
+    strategy_map: _smap,
   });
   refresh();
 }

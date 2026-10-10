@@ -152,17 +152,27 @@ class QuotexAdapter(BrokerAdapter):
         return prof
 
     async def get_candles(self, asset, period, n):
-        for args in ((asset, None, n, period),
-                     (asset, period, n, int(time.time())),
-                     (asset, int(time.time()) - n * period, int(time.time()), period)):
-            try:
-                rows = await self.client.get_candles(*args)
-                out = _norm(rows)
-                if out:
-                    return out
-            except Exception:
-                continue
-        return []
+        try:
+            rows = await self.client.get_candles(
+                asset, int(time.time()), max(n, 30) * period, period)
+            out = _norm(rows)
+            if len(out) >= n:
+                return out[-n:]
+        except Exception:
+            pass
+        # janela curta insuficiente → paginação profunda
+        return await self.get_candles_deep(asset, n * period + 120, period)[-n:] \
+            if n > 0 else await self.get_candles_deep(asset, 1800, period)
+
+    async def get_candles_deep(self, asset, seconds, period=60):
+        """Histórico paginado (regime/backtest — muito mais candles que a
+        janela curta de get_candles)."""
+        try:
+            rows = await self.client.get_historical_candles(
+                asset, seconds, period, timeout=60)
+            return _norm(rows)
+        except Exception:
+            return []
 
     async def reconnect(self):
         """Re-liga o cliente WS da Quotex (sessão cai silenciosamente)."""
