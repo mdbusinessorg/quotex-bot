@@ -237,7 +237,7 @@ class Engine:
                     except Exception as e:
                         # par sem preço ao vivo (mercado fechado) → salta 1h
                         if "price data" in str(e) or "Timeout" in str(e):
-                            self.bad_assets[asset] = time.time() + 3600
+                            self.bad_assets[asset] = time.time() + 900
                         raise
                     t["confidence"] = res["confidence"]
                     self.state["phase"] = "COUNTDOWN"

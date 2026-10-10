@@ -373,11 +373,15 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
                 why.append(f"{st['name']}: {r['signal']} {r['confidence']}%")
             sig = "call" if votes["call"] > votes["put"] else "put"
             n = votes[sig]
-            # >=3 votos E maioria clara (o resto não pode discordar mais)
-            if n < 3 or n <= votes["put" if sig == "call" else "call"] * 2:
+            opp = votes["put" if sig == "call" else "call"]
+            if n < 2 or n <= opp:
                 return None
-            conf = int(sum(confs[sig]) / len(confs[sig]))
-            conf = min(96, conf + (n - 3) * 4)
+            watch = n < 3  # 2 votos = em observação; 3+ = sinal pleno
+            if confs[sig]:
+                conf = int(sum(confs[sig]) / len(confs[sig]))
+                conf = min(96, conf + (n - 3) * 4)
+            else:
+                conf = 45
 
             # --- análise por tile (estilo AI SIGNAL) ---
             i = len(cds) - 1
@@ -413,6 +417,7 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
                     "votes": f"{n}/{len(VOTERS)}",
                     "action": "COMPRAR AGORA" if sig == "call" else "VENDER AGORA",
                     "reasons": why[:6],
+                    "watch": watch,
                     "price": round(closes[-1], 5),
                     "rsi": round(rsi_v, 1) if rsi_v else None,
                     "trend": trend, "momentum": mom, "volatility": vol,
@@ -423,8 +428,8 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
             return None
 
     rows = [x for x in await asyncio.gather(*[scan(a) for a in assets]) if x]
-    rows = [r for r in rows if r["confidence"] >= min_conf]
-    rows.sort(key=lambda r: -r["confidence"])
+    rows = [r for r in rows if r["confidence"] >= min_conf or r["watch"]]
+    rows.sort(key=lambda r: (r["watch"], -r["confidence"]))
     SIG_CACHE["data"] = {"signals": rows, "scanned": len(assets),
                          "ts": __import__("time").time()}
     SIG_CACHE["ts"] = time.time()

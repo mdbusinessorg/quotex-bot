@@ -65,8 +65,8 @@ async function loadSignals() {
     $("sigBody").innerHTML = sigs.slice(0, 12).map(s => {
       const ex = s.suggested_expiry >= 60 ? (s.suggested_expiry / 60) + " min" : s.suggested_expiry + "s";
       return `
-      <div class="sigcard ${s.signal}">
-        <span class="liveb">● LIVE</span>
+      <div class="sigcard ${s.signal}" ${s.watch ? 'style="opacity:.75;filter:saturate(.6)"' : ""}>
+        <span class="liveb">${s.watch ? "◌ OBSERVAÇÃO" : "● LIVE"}</span>
         <div class="row" style="align-items:center;gap:8px">
           <b style="font-size:15px">${s.asset}</b>
           <span class="tag" style="font-size:10.5px">${ex}</span>
