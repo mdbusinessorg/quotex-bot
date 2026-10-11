@@ -64,7 +64,7 @@ async function loadSignals() {
       : `${r.scanned} pares · ${new Date(r.ts * 1000).toLocaleTimeString()}`;
     const sigs = r.signals || [];
     $("noSig").style.display = sigs.length ? "none" : "block";
-    $("sigBody").innerHTML = sigs.slice(0, 20).map(s => `
+    const card = s => `
       <div class="card" style="border-left:3px solid ${s.signal === "call" ? "var(--g)" : "var(--r)"}${s.watch ? ";opacity:.7" : ""}">
         <div class="row" style="align-items:center">
           <b style="font-size:16px">${s.asset}</b>
@@ -81,7 +81,15 @@ async function loadSignals() {
         <div class="disc">${s.reasons.join(" · ")}</div>
         <button class="b ${s.signal === "call" ? "go" : "stop"}" style="margin-top:10px;width:100%"
           onclick="enterManual('${s.asset}','${s.signal}',${s.suggested_expiry})">${s.action}</button>
-      </div>`).join("");
+      </div>`;
+    const forex = sigs.filter(s => s.cls !== "crypto");
+    const crypto = sigs.filter(s => s.cls === "crypto");
+    let html = "";
+    if (forex.length)
+      html += `<div style="grid-column:1/-1;margin:6px 0 -4px;font-weight:700">💱 MOEDAS · payout maior</div>` + forex.map(card).join("");
+    if (crypto.length)
+      html += `<div style="grid-column:1/-1;margin:14px 0 -4px;font-weight:700">₿ CRIPTO</div>` + crypto.map(card).join("");
+    $("sigBody").innerHTML = html;
   } catch (e) {}
 }
 setInterval(() => {

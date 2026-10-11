@@ -591,7 +591,10 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
                    "Média" if atr_pct is not None and atr_pct > 0.33 else "Baixa")
             candle_t = int(cds[-1]["time"]) if cds else 0
             expires_in = max(0, candle_t + 60 - int(time.time()))
+            cls = "crypto" if a.split("_")[0].replace("USD", "") in \
+                ("BTC", "ETH", "XRP", "SOL", "LTC", "DOGE") else "forex"
             return {"asset": a, "signal": sig, "confidence": conf,
+                    "cls": cls,
                     "votes": f"{n}/{len(VOTERS)}",
                     "sig_id": f"{a}-{sig}-{candle_t}",
                     "expires_in": expires_in,
