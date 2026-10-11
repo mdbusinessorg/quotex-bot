@@ -811,6 +811,16 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
         deduped.append(r)
     rows = [r for r in deduped if r["confidence"] >= min_conf]
     rows.sort(key=lambda r: (r["watch"], -r["confidence"], -r["score"]))
+    # Fallback "nunca vazio": se poucos passam o filtro (confiança calibrada
+    # honesta ~50% quando há pouco histórico), mostra os melhores abaixo do
+    # corte marcados como OBSERVAÇÃO — o utilizador pediu que o painel não
+    # fique 20min sem sinais; os cartões continuam a mostrar o acerto medido.
+    if len(rows) < 3:
+        below = [r for r in deduped if r["confidence"] < min_conf]
+        below.sort(key=lambda r: (-r["confidence"], -r["score"]))
+        for r in below[:max(0, 6 - len(rows))]:
+            r["watch"] = True
+            rows.append(r)
     rows = rows[:12]                       # ~12 melhores sinais
     _sig_track(rows)
     SIG_CACHE["data"] = {"signals": rows, "scanned": len(assets),
