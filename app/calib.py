@@ -33,8 +33,9 @@ def build(results):
         t["global"][1] += won
         bump(t["cls"], cls, won)
         if voters:
-            bump(t["lead"], (cls, voters[0]), won)
             bump(t["set"], (cls, tuple(voters)), won)
+            if len(voters) == 1:
+                bump(t["lead"], (cls, voters[0]), won)
     return t
 
 
@@ -64,13 +65,12 @@ def no_trade_exact(tables, cls, voters):
     voters = sorted(voters or [])
     if not voters:
         return False
-    k = min(len(voters), 2)
-    if len(voters) >= 2:
-        s = tables.get("set", {}).get((cls, tuple(voters[:k])), [0, 0])
-        if s[0] >= 60 and _shrink(s[0], s[1], PRIOR, 30) < 0.45:
-            return True
+    s = tables.get("set", {}).get((cls, tuple(voters)), [0, 0])
+    if s[0] >= 60 and _shrink(s[0], s[1], PRIOR, 30) < 0.45:
+        return True
+    if len(voters) == 1:
         l = tables.get("lead", {}).get((cls, voters[0]), [0, 0])
-        if l[0] >= 60 and _shrink(l[0], l[1], PRIOR, 30) < 0.45:
+        if l[0] >= 80 and _shrink(l[0], l[1], PRIOR, 30) < 0.45:
             return True
     return False
 
