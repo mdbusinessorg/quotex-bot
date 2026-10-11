@@ -167,6 +167,45 @@ def detect_candle_patterns(cds):
     if c["high"] < p["low"]:
         add("Gap Down / Window Falling", "put" if tr == "down" else "put", 0.5, "janela de baixa")
 
+    # --- inside / outside bar ---
+    if c["high"] <= p["high"] and c["low"] >= p["low"]:
+        # inside bar: compressão — a direção é da tendência prévia (breakout esperado)
+        add("Inside Bar", "call" if tr == "up" else "put" if tr == "down" else "call",
+            0.45, "compressão — esperar quebra na direção da tendência")
+    if c["high"] > p["high"] and c["low"] < p["low"]:
+        add("Outside Bar Bullish" if _bull(c) else "Outside Bar Bearish",
+            "call" if _bull(c) else "put", 0.6, "engolfo com pavios — volatilidade")
+
+    # --- rejeição (pavio longo num extremo) ---
+    if _lsh(c) >= rng * 0.6 and body > 0:
+        add("Rejection Lower Wick", "call", 0.6, "preço rejeitado em baixa")
+    if _ush(c) >= rng * 0.6 and body > 0:
+        add("Rejection Upper Wick", "put", 0.6, "preço rejeitado em alta")
+
+    # --- breakout candle: fecho além do extremo das últimas 12 velas ---
+    if len(cds) >= 14:
+        hh = max(x["high"] for x in cds[-13:-1])
+        ll = min(x["low"] for x in cds[-13:-1])
+        if c["close"] > hh and body > ab:
+            add("Breakout Up", "call", 0.65, "quebra de máximo recente com corpo")
+        if c["close"] < ll and body > ab:
+            add("Breakout Down", "put", 0.65, "quebra de mínimo recente com corpo")
+
+    # --- sequência de momentum / perda de força ---
+    if len(cds) >= 4:
+        seg = cds[-4:]
+        bodies = [abs(_b(x)) for x in seg]
+        if all(_bull(x) for x in seg):
+            if bodies[-1] > bodies[0]:
+                add("Momentum Up Sequence", "call", 0.55, "4 velas de alta a crescer")
+            elif bodies[-1] < bodies[0] * 0.6:
+                add("Momentum Exhaustion Up", "put", 0.5, "alta a perder força")
+        if all(_bear(x) for x in seg):
+            if bodies[-1] > bodies[0]:
+                add("Momentum Down Sequence", "put", 0.55, "4 velas de baixa a crescer")
+            elif bodies[-1] < bodies[0] * 0.6:
+                add("Momentum Exhaustion Down", "call", 0.5, "baixa a perder força")
+
     return out
 
 

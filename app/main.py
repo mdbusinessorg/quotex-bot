@@ -400,6 +400,23 @@ async def _sig_tracker():
         await asyncio.sleep(15)
 
 
+def strat_weight(k):
+    """Peso da estratégia a partir do seu win-rate medido ao vivo.
+    <12 amostras → neutro; <45% → voto vale 0,5; ≥60% → 1,2; ≥70% → 1,4."""
+    rows = [r for r in SIG_RESULTS if k in (r.get("voters") or [])]
+    n = len(rows)
+    if n < 12:
+        return 1.0
+    wr = sum(1 for r in rows if r["result"] == "win") / n
+    if wr >= 0.70:
+        return 1.4
+    if wr >= 0.60:
+        return 1.2
+    if wr < 0.45:
+        return 0.5
+    return 1.0
+
+
 def sig_stats():
     """Resumo da acertividade medida por classe/confiança/LIVE vs OBS."""
     def agg(rows):
@@ -633,14 +650,17 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
                 r = st["fn"](cds[-(st["min_candles"] + 45):])
                 if not r["signal"]:
                     continue
-                votes[r["signal"]] += 1
-                confs[r["signal"]].append(r["confidence"])
+                w = strat_weight(k)
+                if w <= 0:
+                    continue
+                votes[r["signal"]] += w
+                confs[r["signal"]].append(r["confidence"] * w)
                 voter_keys[r["signal"]].append(k)
                 why.append(f"{st['name']}: {r['signal']} {r['confidence']}%")
             sig = "call" if votes["call"] > votes["put"] else "put"
-            n = votes[sig]
+            n = sum(1 for k in voter_keys[sig])
             opp = votes["put" if sig == "call" else "call"]
-            if n < 1 or n <= opp:
+            if n < 1 or votes[sig] <= opp:
                 return None
             watch = n < 3  # <3 votos = em observação; 3+ = sinal pleno
             if confs[sig]:
