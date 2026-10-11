@@ -601,7 +601,7 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
             return None
 
     rows = [x for x in await asyncio.gather(*[scan(a) for a in assets]) if x]
-    rows = [r for r in rows if r["confidence"] >= min_conf or r["watch"]]
+    rows = [r for r in rows if r["confidence"] >= min_conf]
     rows.sort(key=lambda r: (r["watch"], -r["confidence"]))
     SIG_CACHE["data"] = {"signals": rows, "scanned": len(assets),
                          "cached": len(CANDLE_CACHE),
