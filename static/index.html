@@ -3,22 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>QuotexBot — Trading Platform</title>
+<title>PINHANHA BOT — We Read The Market</title>
+<link rel="icon" type="image/png" href="/static/logo.png">
 <style>
-:root{--bg:#070a13;--card:#10141f;--card2:#0c1019;--line:#1d2536;--txt:#eef1f8;--mut:#8b93a8;
-      --g:#22e58c;--r:#ff5c6c;--a:#7c5cff;--a2:#22d3ee;--amber:#ffb020}
+:root{--bg:#080705;--card:#14110b;--card2:#0d0b08;--line:#2a2517;--txt:#f4f0e4;--mut:#9a8f77;
+      --g:#22e58c;--r:#ff5c6c;--a:#d4af37;--a2:#f5d76e;--amber:#ffb020}
 *{box-sizing:border-box}
 body{margin:0;font-family:Inter,system-ui,Segoe UI,sans-serif;color:var(--txt);font-size:14px;
-  background:radial-gradient(1200px 600px at 80% -10%,rgba(124,92,255,.14),transparent 60%),
-             radial-gradient(900px 500px at -10% 110%,rgba(34,211,238,.08),transparent 60%),var(--bg)}
+  background:radial-gradient(1200px 600px at 80% -10%,rgba(212,175,55,.13),transparent 60%),
+             radial-gradient(900px 500px at -10% 110%,rgba(245,215,110,.07),transparent 60%),var(--bg)}
 .app{display:flex;min-height:100vh}
-aside{width:225px;background:rgba(16,20,31,.75);backdrop-filter:blur(10px);border-right:1px solid var(--line);
+aside{width:225px;background:rgba(16,13,8,.75);backdrop-filter:blur(10px);border-right:1px solid var(--line);
   padding:20px 14px;position:sticky;top:0;height:100vh;flex-shrink:0}
-.logo{font-weight:800;font-size:17px;margin:0 8px 22px;letter-spacing:.5px}
+.logo{font-weight:800;font-size:17px;margin:0 8px 22px;letter-spacing:.5px;display:flex;align-items:center;gap:9px}
+.logo img{width:34px;height:34px;border-radius:50%;box-shadow:0 0 14px rgba(212,175,55,.4)}
 .logo span{background:linear-gradient(90deg,var(--a),var(--a2));-webkit-background-clip:text;background-clip:text;color:transparent}
+.login-logo{text-align:center;margin-bottom:14px}
+.login-logo img{width:150px;height:150px;border-radius:50%;box-shadow:0 0 40px rgba(212,175,55,.35)}
+.login-tag{font-size:10.5px;letter-spacing:2.5px;color:var(--mut);text-align:center;margin-top:8px;text-transform:uppercase}
 nav button{display:block;width:100%;text-align:left;background:none;border:none;color:var(--mut);
   padding:10px 12px;border-radius:10px;font-size:13.5px;cursor:pointer;margin-bottom:3px;transition:all .15s}
-nav button.on,nav button:hover{background:linear-gradient(90deg,rgba(124,92,255,.18),transparent);color:var(--txt)}
+nav button.on,nav button:hover{background:linear-gradient(90deg,rgba(212,175,55,.18),transparent);color:var(--txt)}
 nav button.on{box-shadow:inset 2px 0 0 var(--a)}
 main{flex:1;padding:22px 26px;max-width:1280px}
 h2{font-size:18px;margin:0 0 16px;font-weight:700}
@@ -37,7 +42,7 @@ input:focus,select:focus{outline:none;border-color:var(--a)}
 button.b{border:none;border-radius:9px;padding:10px 16px;font-weight:700;cursor:pointer;font-size:13.5px;transition:all .15s}
 .b.go{background:linear-gradient(135deg,#22e58c,#0dbb6f);color:#03130a}
 .b.stop{background:linear-gradient(135deg,#ff5c6c,#e63950);color:#fff}
-.b.def{background:linear-gradient(135deg,var(--a),#5a3fe0);color:#fff}
+.b.def{background:linear-gradient(135deg,#e8c95c,var(--a) 55%,#a8871f);color:#191204;text-shadow:none}
 .b.ghost{background:var(--card2);color:var(--mut);border:1px solid var(--line)}
 .b:hover{filter:brightness(1.15)}
 .row{display:flex;gap:10px}.row>*{flex:1}
@@ -47,7 +52,7 @@ th{color:var(--mut);font-size:10.5px;text-transform:uppercase;font-weight:600}
 .win{color:var(--g);font-weight:700}.loss{color:var(--r);font-weight:700}
 .pill{padding:3px 10px;border-radius:99px;font-size:11.5px;font-weight:600}
 .pill.on{background:rgba(34,229,140,.15);color:var(--g)}.pill.off{background:rgba(255,92,108,.15);color:var(--r)}
-.pill.real{background:rgba(124,92,255,.18);color:#c9baff}
+.pill.real{background:rgba(212,175,55,.18);color:#f0d78a}
 .pill.call{background:rgba(34,229,140,.15);color:var(--g)}.pill.put{background:rgba(255,92,108,.15);color:var(--r)}
 .sig{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 .tag{background:var(--card2);border:1px solid var(--line);border-radius:7px;padding:3px 9px;font-size:12px;color:var(--mut)}
@@ -76,7 +81,7 @@ th{color:var(--mut);font-size:10.5px;text-transform:uppercase;font-weight:600}
 .err{color:var(--r);font-size:12.5px}
 canvas{width:100%}
 #chart{height:280px;background:var(--card2);border-radius:10px;border:1px solid var(--line)}
-.ai-card{background:linear-gradient(135deg,rgba(124,92,255,.12),rgba(34,211,238,.05)),var(--card)}
+.ai-card{background:linear-gradient(135deg,rgba(212,175,55,.12),rgba(245,215,110,.05)),var(--card)}
 .pat{display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border:1px solid var(--line);
   border-radius:8px;margin-top:6px;background:var(--card2)}
 .pat b{font-size:13px}
@@ -87,17 +92,19 @@ canvas{width:100%}
 </head>
 <body>
 <div id="loginScr" style="display:flex;min-height:100vh;align-items:center;justify-content:center">
-  <div class="card" style="width:330px">
-    <div class="logo">Quotex<span>Bot</span></div>
-    <label>Password do painel</label>
-    <input id="pw" type="password" placeholder="(defeito: devin)">
+  <div class="card" style="width:340px">
+    <div class="login-logo"><img src="/static/logo.png" alt="PINHANHA BOT"></div>
+    <div class="logo" style="justify-content:center;margin:0 0 4px">PINHANHA<span>&nbsp;BOT</span></div>
+    <div class="login-tag">We don't chase money.<br>We read the market.</div>
+    <label style="margin-top:16px">Password do painel</label>
+    <input id="pw" type="password" placeholder="Password">
     <button class="b def" style="width:100%;margin-top:12px" onclick="login()">Entrar</button>
     <div class="err" id="loginErr"></div>
   </div>
 </div>
 <div class="app" id="app" style="display:none">
 <aside>
-  <div class="logo">Quotex<span>Bot</span></div>
+  <div class="logo"><img src="/static/logo.png" alt="">PINHANHA<span>BOT</span></div>
   <nav id="nav">
     <button data-p="signals" class="on">⚡ Sinais</button>
     <button data-p="dashboard">◈ Dashboard</button>

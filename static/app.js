@@ -309,9 +309,9 @@ function drawCandles(cds) {
   });
   // preço atual
   const last = cds[n - 1].close;
-  ctx.strokeStyle = "#7c5cff"; ctx.setLineDash([6, 4]);
+  ctx.strokeStyle = "#d4af37"; ctx.setLineDash([6, 4]);
   ctx.beginPath(); ctx.moveTo(0, y(last)); ctx.lineTo(W, y(last)); ctx.stroke(); ctx.setLineDash([]);
-  ctx.fillStyle = "#7c5cff"; ctx.textAlign = "right";
+  ctx.fillStyle = "#d4af37"; ctx.textAlign = "right";
   ctx.fillText(last.toFixed(last > 100 ? 1 : 5), W - 8, y(last) - 5);
 }
 
