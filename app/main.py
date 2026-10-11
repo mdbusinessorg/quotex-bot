@@ -68,6 +68,7 @@ async def _auto_connect():
     asyncio.create_task(_candle_warmer())
     asyncio.create_task(_tick_warmer())
     asyncio.create_task(_public_warmer())
+    asyncio.create_task(_price_warmer())
 
 BOT_PASSWORD = os.getenv("BOT_PASSWORD", "devin")
 TOKENS = set()
@@ -435,6 +436,25 @@ async def _public_warmer():
         await asyncio.sleep(20)
 
 
+async def _price_warmer():
+    """Último preço real do Yahoo (batch, sem login) — injecta ticks na vela
+    de 1m em formação para os pares sem stream da Quotex. As moedas passam a
+    atualizar tão rápido como as criptos enquanto o mercado está aberto."""
+    from . import public_feed
+    import asyncio
+    log = logging.getLogger("pxfeed")
+    while True:
+        try:
+            prices = await public_feed.fetch_prices(_target_assets())
+            for a, tk in prices.items():
+                # se houver ticks da Quotex nos últimos 8s, a Quotex manda
+                if time.time() - _LAST_TICK.get(a, 0) > 8:
+                    _merge_ticks(a, [tk])
+        except Exception as e:
+            log.warning("price warmer: %s", e)
+        await asyncio.sleep(6)
+
+
 async def _candle_warmer():
     """Mantém candles frescos em background — /api/signals fica instantâneo."""
     import asyncio
@@ -614,7 +634,19 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
             return None
 
     rows = [x for x in await asyncio.gather(*[scan(a) for a in assets]) if x]
-    rows = [r for r in rows if r["confidence"] >= min_conf]
+    # dedup: quando _otc e o par normal mostram o mesmo sinal ao mesmo preço
+    # (dados Yahoo idênticos, sem stream Quotex), fica só o _otc — negociável
+    # 24/7 na plataforma. Com ticks reais eles divergem e ambos aparecem.
+    seen = {}
+    deduped = []
+    for r in sorted(rows, key=lambda r: "_otc" not in r["asset"]):
+        base = r["asset"].replace("_otc", "")
+        key = (base, r["signal"], round(r["price"], 3))
+        if key in seen:
+            continue
+        seen[key] = True
+        deduped.append(r)
+    rows = [r for r in deduped if r["confidence"] >= min_conf]
     rows.sort(key=lambda r: (r["watch"], -r["confidence"]))
     rows = rows[:12]                       # ~12 melhores sinais
     SIG_CACHE["data"] = {"signals": rows, "scanned": len(assets),

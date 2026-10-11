@@ -8,6 +8,7 @@ ligação autenticada.
 
 import asyncio
 import json
+import time
 import urllib.request
 
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -79,3 +80,62 @@ async def fetch_candles(asset, n=100):
         return _parse(js)[-n:]
     except Exception:
         return []
+
+
+# ---------------------------------------------------------------- ticks RT
+
+def _fetch_quotes(syms):
+    """Um único pedido batch: último preço de todos os símbolos."""
+    url = ("https://query1.finance.yahoo.com/v7/finance/quote?symbols="
+           + ",".join(syms))
+    req = urllib.request.Request(url, headers=UA)
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.loads(r.read())
+
+
+def _fetch_price1(sym):
+    """Fallback: meta do chart v8 traz regularMarketPrice."""
+    js = _fetch(sym)
+    res = (js.get("chart") or {}).get("result") or []
+    if not res:
+        return None
+    meta = res[0].get("meta") or {}
+    return meta.get("regularMarketPrice")
+
+
+async def fetch_prices(assets):
+    """{asset: {"time": ts, "price": p}} — último preço real (forex/cripto/ouro).
+
+    Alimenta o candle de 1m em formação quando não há stream da Quotex,
+    para os sinais de moedas atualizarem tão rápido como os de cripto.
+    """
+    out = {}
+    pairs = [(a, yahoo_symbol(a)) for a in assets]
+    pairs = [(a, s) for a, s in pairs if s]
+    if not pairs:
+        return out
+    try:
+        js = await asyncio.to_thread(_fetch_quotes, [s for _, s in pairs])
+        by_sym = {q.get("symbol"): q
+                  for q in ((js.get("quoteResponse") or {}).get("result") or [])}
+        now = time.time()
+        for a, s in pairs:
+            q = by_sym.get(s) or {}
+            p = q.get("regularMarketPrice")
+            if p:
+                out[a] = {"time": now, "price": float(p)}
+        if out:
+            return out
+    except Exception:
+        pass
+    # fallback um-a-um (lento — só se o batch falhar)
+    async def one(a, s):
+        try:
+            async with _SEM:
+                p = await asyncio.to_thread(_fetch_price1, s)
+            if p:
+                out[a] = {"time": time.time(), "price": float(p)}
+        except Exception:
+            pass
+    await asyncio.gather(*[one(a, s) for a, s in pairs])
+    return out
