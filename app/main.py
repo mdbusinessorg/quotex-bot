@@ -759,8 +759,8 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
             # confiança = acertividade medida deste tipo de sinal (calibrada)
             p_cal, n_eff = calib.estimate(CALIB, cls, voter_keys[sig])
             grade = calib.grade(p_cal, n_eff)
-            if grade == "no_trade" or blocked or                     calib.no_trade_exact(CALIB, cls, voter_keys[sig]):
-                return None                  # NO_TRADE: evidência forte contra
+            if grade == "no_trade" or calib.no_trade_exact(CALIB, cls, voter_keys[sig]):
+                return None                  # NO_TRADE: evidência forte contra                  # NO_TRADE: evidência forte contra
             conf = int(round(100 * p_cal))
             watch = grade not in ("forte", "valido")
             hist_ok = mc and ((sig == "call" and mc["hist"] > 0) or
