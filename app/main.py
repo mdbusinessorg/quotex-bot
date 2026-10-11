@@ -359,6 +359,7 @@ def _sig_track(rows):
         SIG_TRACK.append({"asset": r["asset"], "signal": r["signal"],
                           "entry": r["price"], "conf": r["confidence"],
                           "watch": r["watch"], "cls": r["cls"],
+                          "voters": r.get("voters") or [],
                           "emit_ts": now, "due": now + 60})
     del SIG_TRACK[:-600]
     if len(_SIG_SEEN) > 5000:
@@ -413,6 +414,12 @@ def sig_stats():
     for lo, hi in ((45, 65), (65, 75), (75, 85), (85, 97)):
         out[f"conf_{lo}_{hi}"] = agg(
             [r for r in SIG_RESULTS if lo <= r["conf"] < hi])
+    # win-rate por estratégia — o núcleo da auto-afinação
+    by_strat = {}
+    for r in SIG_RESULTS:
+        for k in r.get("voters") or []:
+            by_strat.setdefault(k, []).append(r)
+    out["strategies"] = {k: agg(v) for k, v in by_strat.items()}
     out["recent"] = [{"asset": r["asset"], "signal": r["signal"],
                       "conf": r["conf"], "result": r["result"],
                       "entry": r["entry"], "exit": r["exit"]}
@@ -619,6 +626,7 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
             closes = [c["close"] for c in cds]
             votes = {"call": 0, "put": 0}
             confs = {"call": [], "put": []}
+            voter_keys = {"call": [], "put": []}
             why = []
             for k in VOTERS:
                 st = STRATEGIES[k]
@@ -627,6 +635,7 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
                     continue
                 votes[r["signal"]] += 1
                 confs[r["signal"]].append(r["confidence"])
+                voter_keys[r["signal"]].append(k)
                 why.append(f"{st['name']}: {r['signal']} {r['confidence']}%")
             sig = "call" if votes["call"] > votes["put"] else "put"
             n = votes[sig]
@@ -685,6 +694,24 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
                     conf = min(96, conf + 3)
                 else:
                     conf = max(35, conf - 3)
+            # --- contexto 5m (multi-timeframe): só velas 5m fechadas ---
+            ctx5 = None
+            if len(cds) >= 15:
+                now5 = int(time.time()) // 300 * 300
+                c5 = {}
+                for c in cds:
+                    b5 = int(c["time"]) // 300 * 300
+                    if b5 < now5:            # ignora a vela 5m em formação
+                        c5[b5] = c["close"]
+                keys5 = sorted(c5)
+                if len(keys5) >= 3:
+                    up5 = c5[keys5[-1]] > c5[keys5[-3]]
+                    ctx5 = "up" if up5 else "down"
+                    if (sig == "call") == up5:
+                        conf = min(96, conf + 4)
+                    else:
+                        conf = max(35, conf - 6)
+                        watch = True       # timeframe maior contra o sinal
             hist_ok = mc and ((sig == "call" and mc["hist"] > 0) or
                               (sig == "put" and mc["hist"] < 0))
             mom = "Forte" if (aligned and hist_ok) else \
@@ -698,6 +725,9 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
             return {"asset": a, "signal": sig, "confidence": conf,
                     "cls": cls,
                     "votes": f"{n}/{len(VOTERS)}",
+                    "voters": voter_keys[sig],
+                    "ctx5": ctx5,
+                    "sig_time": candle_t,
                     "sig_id": f"{a}-{sig}-{candle_t}",
                     "expires_in": expires_in,
                     "action": "COMPRAR AGORA" if sig == "call" else "VENDER AGORA",

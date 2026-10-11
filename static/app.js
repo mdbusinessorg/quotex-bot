@@ -69,6 +69,13 @@ async function loadSignals() {
         `acertividade medida: ${t.wr}% (${t.wins}/${t.n}) · LIVE ${live.wr ?? "—"}% (${live.n ?? 0})` +
         ` · forex ${(st.forex || {}).wr ?? "—"}% · cripto ${(st.crypto || {}).wr ?? "—"}%`;
       $("sigAcc").style.display = "";
+      // faixa de resultados confirmados (últimos sinais avaliados)
+      const rec = (st.recent || []).slice(-14);
+      if (rec.length && $("sigResults"))
+        $("sigResults").innerHTML = rec.map(r =>
+          `<span class="tag" style="font-size:10px;color:${r.result === "win" ? "var(--g)" : "var(--r)"}"
+            title="${r.asset} ${r.signal} conf ${r.conf}%">${r.result === "win" ? "✓" : "✗"} ${r.asset.replace("_otc", "")}</span>`
+        ).join("");
     } else if ($("sigAcc"))
       $("sigAcc").textContent = "a medir acertividade… (precisa de ~1min por sinal)";
     const sigs = r.signals || [];
@@ -85,6 +92,8 @@ async function loadSignals() {
           <span class="tag">votos ${s.votes}</span>
           <span class="tag">expiração ${s.suggested_expiry >= 60 ? (s.suggested_expiry / 60) + " min" : s.suggested_expiry + "s"}</span>
           ${s.expires_in != null ? `<span class="tag" style="color:var(--y)">⏱ ${s.expires_in}s</span>` : ""}
+          ${s.sig_time ? `<span class="tag">${new Date(s.sig_time * 1000).toLocaleTimeString()}</span>` : ""}
+          ${s.ctx5 ? `<span class="tag">5m ${s.ctx5 === "up" ? "↑" : "↓"}</span>` : ""}
           ${s.stale ? '<span class="tag" style="color:var(--r)">atrasado</span>' : ""}
         </div>
         <div class="disc">${s.reasons.join(" · ")}</div>
