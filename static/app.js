@@ -56,7 +56,7 @@ async function boot() {
 let _sigTs = 0;
 async function loadSignals() {
   try {
-    const mc = ($("sigMinConf") && $("sigMinConf").value) || 75;
+    const mc = ($("sigMinConf") && $("sigMinConf").value) || 55;
     const r = await api("/api/signals?min_conf=" + mc);
     _sigTs = r.ts || Date.now() / 1000;
     $("sigScan").textContent = r.connected === false ? "bot offline (SIM)"
