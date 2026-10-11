@@ -64,12 +64,7 @@ def no_trade_exact(tables, cls, voters):
     voters = sorted(voters or [])
     if not voters:
         return False
-    c = tables.get("cls", {}).get(cls, [0, 0])
     k = min(len(voters), 2)
-    if c[0] >= 80:
-        p_cls = _shrink(c[0], c[1], PRIOR, 40)
-        if p_cls < 0.40:                     # classe toda claramente contra
-            return True
     if len(voters) >= 2:
         s = tables.get("set", {}).get((cls, tuple(voters[:k])), [0, 0])
         if s[0] >= 60 and _shrink(s[0], s[1], PRIOR, 30) < 0.45:
