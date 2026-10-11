@@ -59,6 +59,6 @@ def test_no_trade_exact_needs_strong_evidence():
 
 
 def test_no_trade_exact_never_on_few_voters():
-    t = calib.build(_res(200, 20, voters=["ai_turbo"]))
+    t = calib.build(_res(50, 5, voters=["ai_turbo"]))   # 10% mas só 50
     assert calib.no_trade_exact(t, "forex", ["ai_turbo"]) is False
     assert calib.no_trade_exact(t, "forex", []) is False
