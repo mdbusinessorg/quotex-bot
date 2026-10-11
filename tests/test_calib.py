@@ -45,3 +45,15 @@ def test_other_class_barely_affected():
     t = calib.build(_res(300, 300, cls="crypto"))
     p, n = calib.estimate(t, "forex", ["ai_turbo"])
     assert p < 0.9 and n == 0 and calib.grade(p, n) == "sem_dados"
+
+
+def test_no_trade_exact_needs_strong_evidence():
+    t = calib.build(_res(50, 15))            # 30% mas só 50 amostras
+    assert calib.no_trade_exact(t, "forex", ["ai_turbo", "bible_sr"]) is False
+    t = calib.build(_res(100, 25))           # 25% com 100
+    assert calib.no_trade_exact(t, "forex", ["ai_turbo", "bible_sr"]) is True
+
+
+def test_no_trade_exact_never_on_few_voters():
+    t = calib.build(_res(200, 20, voters=["ai_turbo"]))
+    assert calib.no_trade_exact(t, "forex", ["ai_turbo"]) is False

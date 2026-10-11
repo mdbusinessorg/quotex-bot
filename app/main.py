@@ -384,20 +384,29 @@ def _sig_evaluate():
             keep.append(t)
             continue
         ent = CANDLE_CACHE.get(t["asset"])
-        if not ent or not ent["candles"]:
+        cds = ent["candles"]
+        if not cds:
             if now - t["due"] < 600:
                 keep.append(t)            # sem dados ainda — tenta mais tarde
                 continue
             t["result"] = "void"          # 10 min sem feed → indeterminado
         else:
-            exit_px = float(ent["candles"][-1]["close"])
-            t["exit"] = exit_px
-            if abs(exit_px - t["entry"]) < 1e-9 or ent["ts"] < t["emit_ts"]:
-                t["result"] = "void"       # preço parado / feed sem vela nova
+            # vela que FECHA no vencimento (primeira com open >= due);
+            # cds[-1] pode ser a vela em formação → enviesava a medição
+            after = [c for c in cds if c["time"] >= t["due"]]
+            if not after:
+                if now - t["due"] < 600:
+                    keep.append(t)
+                    continue
+                t["result"] = "void"      # feed parou antes do vencimento
             else:
-                won = (exit_px > t["entry"]) if t["signal"] == "call" \
-                    else (exit_px < t["entry"])
-                t["result"] = "win" if won else "loss"
+                exit_px = float(after[0]["close"])
+                t["exit"] = exit_px
+                if abs(exit_px - t["entry"]) < 1e-9:
+                    t["result"] = "void"  # preço parado (ex: fim-de-semana)
+                else:
+                    won = (exit_px > t["entry"]) if t["signal"] == "call"                         else (exit_px < t["entry"])
+                    t["result"] = "win" if won else "loss"
         t["eval_ts"] = now
         SIG_RESULTS.append(t)
         done.append(t)
@@ -750,8 +759,8 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
             # confiança = acertividade medida deste tipo de sinal (calibrada)
             p_cal, n_eff = calib.estimate(CALIB, cls, voter_keys[sig])
             grade = calib.grade(p_cal, n_eff)
-            if grade == "no_trade" or blocked:
-                return None                  # NO_TRADE: histórico contra / regime
+            if grade == "no_trade" or blocked or                     calib.no_trade_exact(CALIB, cls, voter_keys[sig]):
+                return None                  # NO_TRADE: evidência forte contra
             conf = int(round(100 * p_cal))
             watch = grade not in ("forte", "valido")
             hist_ok = mc and ((sig == "call" and mc["hist"] > 0) or

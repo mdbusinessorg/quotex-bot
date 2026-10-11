@@ -56,13 +56,37 @@ def estimate(tables, cls, voters):
     return _shrink(g[0], g[1], PRIOR, 100), 0
 
 
+def no_trade_exact(tables, cls, voters):
+    """NO_TRADE só com evidência forte a nível exacto — nunca por classe
+    inteira (deadlock: sem sinais → sem amostras → nunca destranca).
+    2+ estratégias a votar → líder p<45% com ≥60 amostras;
+    1 estratégia → p<45% com ≥80 (a 'líder' é o conjunto inteiro)."""
+    voters = sorted(voters or [])
+    if not voters:
+        return False
+    c = tables.get("cls", {}).get(cls, [0, 0])
+    k = min(len(voters), 2)
+    if c[0] >= 80:
+        p_cls = _shrink(c[0], c[1], PRIOR, 40)
+        if p_cls < 0.40:                     # classe toda claramente contra
+            return True
+    if len(voters) >= 2:
+        s = tables.get("set", {}).get((cls, tuple(voters[:k])), [0, 0])
+        if s[0] >= 60 and _shrink(s[0], s[1], PRIOR, 30) < 0.45:
+            return True
+        l = tables.get("lead", {}).get((cls, voters[0]), [0, 0])
+        if l[0] >= 60 and _shrink(l[0], l[1], PRIOR, 30) < 0.45:
+            return True
+    return False
+
+
 def grade(p, n_eff):
     """Categoria fundamentada (ver RELATORIO_QUANTUM_v3):
     forte  — p ≥ 58% com ≥50 amostras do mesmo tipo
     valido — p ≥ breakeven (53,5%) com ≥30 amostras
     obs    — sem vantagem demonstrada ainda (poucas amostras ou p ~50%)
     no_trade — p < 47% com ≥40 amostras: histórico contra, não apresentar"""
-    if n_eff >= 40 and p < 0.47:
+    if n_eff >= 60 and p < 0.45:
         return "no_trade"
     if n_eff >= 50 and p >= 0.58:
         return "forte"
