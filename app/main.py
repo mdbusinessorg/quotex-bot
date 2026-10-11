@@ -695,6 +695,7 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
             aligned = (sig == "call" and rsi_v and rsi_v < 70) or \
                       (sig == "put" and rsi_v and rsi_v > 30)
             # confirmação profunda: leitura das últimas 3 velas fechadas + slope 20
+            agree = -1
             if len(cds) >= 4:
                 closed = cds[-4:-1]          # 3 últimas velas fechadas
                 agree = sum(1 for c in closed
@@ -704,10 +705,10 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
                 elif agree == 2:
                     conf = min(96, conf + 3)
                 elif agree == 0:
-                    conf = max(35, conf - 10)
+                    conf = max(35, conf - 6)
                     watch = True   # histórico todo contra → só observação
                 else:
-                    conf = max(35, conf - 4)
+                    conf = max(35, conf - 2)
             if len(closes) > 20:
                 slope_up = closes[-1] > closes[-20]
                 if slope_up == (sig == "call"):
@@ -730,8 +731,9 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
                     if (sig == "call") == up5:
                         conf = min(96, conf + 4)
                     else:
-                        conf = max(35, conf - 6)
-                        watch = True       # timeframe maior contra o sinal
+                        conf = max(35, conf - 3)
+                        if agree == 0:
+                            watch = True   # 5m contra + velas contra = observação
             hist_ok = mc and ((sig == "call" and mc["hist"] > 0) or
                               (sig == "put" and mc["hist"] < 0))
             mom = "Forte" if (aligned and hist_ok) else \
