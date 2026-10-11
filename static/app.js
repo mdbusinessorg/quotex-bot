@@ -50,13 +50,13 @@ async function boot() {
   setInterval(loadPatterns, 15000);
   setInterval(loadProfile, 15000);
   loadSignals();
-  setInterval(loadSignals, 3000);
+  setInterval(loadSignals, 1500);
 }
 
 let _sigTs = 0;
 async function loadSignals() {
   try {
-    const mc = ($("sigMinConf") && $("sigMinConf").value) || 55;
+    const mc = ($("sigMinConf") && $("sigMinConf").value) || 75;
     const r = await api("/api/signals?min_conf=" + mc);
     _sigTs = r.ts || Date.now() / 1000;
     $("sigScan").textContent = r.connected === false ? "bot offline (SIM)"

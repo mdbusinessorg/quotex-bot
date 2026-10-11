@@ -498,7 +498,7 @@ async def sigdiag(_=Depends(auth)):
 @app.get("/api/signals")
 async def signals_ep(min_conf: int = 50, _=Depends(auth)):
     """Varredura em tempo real de todos os pares — sinais para entrada manual."""
-    if SIG_CACHE["data"] and time.time() - SIG_CACHE["ts"] < 2:
+    if SIG_CACHE["data"] and time.time() - SIG_CACHE["ts"] < 1:
         return SIG_CACHE["data"]
     from .broker import REAL_ASSETS
     from . import indicators as ind, patterns as pat, regime as rg
@@ -572,6 +572,7 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
                     conf = min(96, conf + 6)
                 elif last_dir:
                     conf = max(35, conf - 8)
+                    watch = True   # vela fechada contra → só observação
             hist_ok = mc and ((sig == "call" and mc["hist"] > 0) or
                               (sig == "put" and mc["hist"] < 0))
             mom = "Forte" if (aligned and hist_ok) else \
