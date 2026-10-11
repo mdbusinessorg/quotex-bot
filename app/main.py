@@ -563,16 +563,26 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
                 trend = "Lateral"
             aligned = (sig == "call" and rsi_v and rsi_v < 70) or \
                       (sig == "put" and rsi_v and rsi_v > 30)
-            # confirmação 1min: última vela fechada deve concordar com o sinal
-            if len(cds) >= 2:
-                lc = cds[-2]
-                last_dir = "call" if lc["close"] > lc["open"] else \
-                           "put" if lc["close"] < lc["open"] else None
-                if last_dir == sig:
-                    conf = min(96, conf + 6)
-                elif last_dir:
-                    conf = max(35, conf - 8)
-                    watch = True   # vela fechada contra → só observação
+            # confirmação profunda: leitura das últimas 3 velas fechadas + slope 20
+            if len(cds) >= 4:
+                closed = cds[-4:-1]          # 3 últimas velas fechadas
+                agree = sum(1 for c in closed
+                            if (c["close"] > c["open"]) == (sig == "call"))
+                if agree == 3:
+                    conf = min(96, conf + 8)
+                elif agree == 2:
+                    conf = min(96, conf + 3)
+                elif agree == 0:
+                    conf = max(35, conf - 10)
+                    watch = True   # histórico todo contra → só observação
+                else:
+                    conf = max(35, conf - 4)
+            if len(closes) > 20:
+                slope_up = closes[-1] > closes[-20]
+                if slope_up == (sig == "call"):
+                    conf = min(96, conf + 3)
+                else:
+                    conf = max(35, conf - 3)
             hist_ok = mc and ((sig == "call" and mc["hist"] > 0) or
                               (sig == "put" and mc["hist"] < 0))
             mom = "Forte" if (aligned and hist_ok) else \
@@ -603,6 +613,7 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
     rows = [x for x in await asyncio.gather(*[scan(a) for a in assets]) if x]
     rows = [r for r in rows if r["confidence"] >= min_conf]
     rows.sort(key=lambda r: (r["watch"], -r["confidence"]))
+    rows = rows[:12]                       # ~12 melhores sinais
     SIG_CACHE["data"] = {"signals": rows, "scanned": len(assets),
                          "cached": len(CANDLE_CACHE),
                          "warming": not CANDLE_CACHE and engine.connected,
