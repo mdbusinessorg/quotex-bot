@@ -88,11 +88,12 @@ function renderSignals(sigs) {
       <div class="card" style="border-left:3px solid ${s.signal === "call" ? "var(--g)" : "var(--r)"}${s.watch ? ";opacity:.7" : ""}">
         <div class="row" style="align-items:center">
           <b style="font-size:16px">${s.asset}</b>
-          ${s.watch ? '<span class="tag" style="font-size:10.5px">OBSERVAÇÃO</span>' : ""}
+          <span class="tag" style="font-size:10.5px;${s.grade === "forte" ? "color:var(--g)" : s.grade === "valido" ? "color:var(--y)" : ""}">${s.grade_label || (s.watch ? "OBSERVAÇÃO" : "LIVE")}</span>
           <span class="pill ${s.signal}" style="font-size:13px;padding:5px 12px">${s.action}</span>
         </div>
         <div class="sig" style="margin-top:8px">
-          <span class="tag">conf ${s.confidence}%</span>
+          <span class="tag" title="acertividade medida deste tipo de sinal (${s.n_hist ?? 0} amostras)">acerto medido ${s.confidence}% · n=${s.n_hist ?? 0}</span>
+          <span class="tag" title="score heurístico das estratégias (não é probabilidade)">score ${s.score ?? "—"}</span>
           <span class="tag">votos ${s.votes}</span>
           <span class="tag">expiração ${s.suggested_expiry >= 60 ? (s.suggested_expiry / 60) + " min" : s.suggested_expiry + "s"}</span>
           ${s.expires_in != null ? `<span class="tag" style="color:var(--y)">⏱ ${s.expires_in}s</span>` : ""}

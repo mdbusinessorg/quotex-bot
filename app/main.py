@@ -16,6 +16,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import history
+from . import sigstore
+from . import calib
 from .analytics import market_analysis
 from .backtest import run_backtest
 from .broker import ASSETS
@@ -345,57 +347,85 @@ LAST_SCAN_ERRS = {}          # asset -> última exceção no scan
 SIG_TRACK = []               # sinais emitidos à espera de avaliação
 SIG_RESULTS = []             # sinais avaliados {…, result, exit}
 _SIG_SEEN = set()            # dedup de emissão (asset+sig+vela)
+CALIB = calib.build([])      # tabelas de acertividade medida (refeitas a cada 15s)
 
 
 def _sig_track(rows):
     """Regista sinais emitidos (dedup por par+direção+vela) para medir a
     acertividade real: WIN/LOSS avaliado 60s depois pelo preço da cache."""
+    import asyncio
     now = time.time()
+    new = []
     for r in rows:
-        k = (r["asset"], r["signal"], r.get("sig_id"))
-        if k in _SIG_SEEN:
+        sid = r.get("sig_id") or f"{r['asset']}-{r['signal']}-{int(now)}"
+        if sid in _SIG_SEEN:
             continue
-        _SIG_SEEN.add(k)
-        SIG_TRACK.append({"asset": r["asset"], "signal": r["signal"],
-                          "entry": r["price"], "conf": r["confidence"],
-                          "watch": r["watch"], "cls": r["cls"],
-                          "voters": r.get("voters") or [],
-                          "emit_ts": now, "due": now + 60})
+        _SIG_SEEN.add(sid)
+        new.append({"id": sid, "asset": r["asset"], "signal": r["signal"],
+                    "entry": r["price"], "conf": r["confidence"],
+                    "watch": r["watch"], "cls": r["cls"],
+                    "voters": r.get("voters") or [], "ctx5": r.get("ctx5"),
+                    "emit_ts": now, "due": now + 60, "result": "pending",
+                    "exit": None, "eval_ts": None})
+    SIG_TRACK.extend(new)
     del SIG_TRACK[:-600]
     if len(_SIG_SEEN) > 5000:
         _SIG_SEEN.clear()
+    if new and sigstore.enabled():
+        asyncio.create_task(sigstore.save_emitted(new))
 
 
 def _sig_evaluate():
     """Avalia sinais vencidos: compara o preço atual da cache com a entrada."""
     now = time.time()
-    keep = []
+    keep, done = [], []
     for t in SIG_TRACK:
         if t["due"] > now:
             keep.append(t)
             continue
         ent = CANDLE_CACHE.get(t["asset"])
         if not ent or not ent["candles"]:
-            continue                      # sem dados — não avaliável
-        exit_px = float(ent["candles"][-1]["close"])
-        t["exit"] = exit_px
-        if abs(exit_px - t["entry"]) < 1e-9 or ent["ts"] < t["emit_ts"]:
-            t["result"] = "void"           # preço parado / feed sem vela nova
+            if now - t["due"] < 600:
+                keep.append(t)            # sem dados ainda — tenta mais tarde
+                continue
+            t["result"] = "void"          # 10 min sem feed → indeterminado
         else:
-            won = (exit_px > t["entry"]) if t["signal"] == "call" \
-                else (exit_px < t["entry"])
-            t["result"] = "win" if won else "loss"
+            exit_px = float(ent["candles"][-1]["close"])
+            t["exit"] = exit_px
+            if abs(exit_px - t["entry"]) < 1e-9 or ent["ts"] < t["emit_ts"]:
+                t["result"] = "void"       # preço parado / feed sem vela nova
+            else:
+                won = (exit_px > t["entry"]) if t["signal"] == "call" \
+                    else (exit_px < t["entry"])
+                t["result"] = "win" if won else "loss"
+        t["eval_ts"] = now
         SIG_RESULTS.append(t)
+        done.append(t)
     SIG_TRACK[:] = keep
-    del SIG_RESULTS[:-800]
+    del SIG_RESULTS[:-4000]
+    return done
 
 
 async def _sig_tracker():
     """Avalia sinais emitidos ao fim de 60s — acertividade medida, não suposta."""
     import asyncio
+    try:
+        done, pend = await sigstore.load_recent()
+        SIG_RESULTS.extend(done)
+        SIG_TRACK.extend(pend)
+        _SIG_SEEN.update(t["id"] for t in done + pend)
+        logging.getLogger("signals").info("sigstore: %d avaliados + %d pendentes repostos", len(done), len(pend))
+    except Exception as e:
+        logging.getLogger("signals").warning("sigstore load: %s", e)
+    global CALIB
+    CALIB = calib.build(SIG_RESULTS)
     while True:
         try:
-            _sig_evaluate()
+            done = _sig_evaluate()
+            if done and sigstore.enabled():
+                asyncio.create_task(sigstore.save_results(done))
+            if done:
+                CALIB = calib.build(SIG_RESULTS)
         except Exception:
             pass
         await asyncio.sleep(15)
@@ -669,12 +699,10 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
             if n < 1 or votes[sig] <= opp:
                 return None
             watch = n < 3  # <3 votos = em observação; 3+ = sinal pleno
-            if confs[sig]:
-                conf = int(sum(confs[sig]) / wsum[sig])   # média ponderada
-                conf = min(96, conf + (n - 3) * 4)
-            else:
-                conf = 45
+            raw = int(sum(confs[sig]) / wsum[sig]) if confs[sig] else 45
 
+            cls = "crypto" if a.split("_")[0].replace("USD", "") in \
+                ("BTC", "ETH", "XRP", "SOL", "LTC", "DOGE") else "forex"
             # --- análise por tile (estilo AI SIGNAL) ---
             i = len(cds) - 1
             e20 = ind.ema(closes, 20)
@@ -706,21 +734,6 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
                 closed = cds[-4:-1]          # 3 últimas velas fechadas
                 agree = sum(1 for c in closed
                             if (c["close"] > c["open"]) == (sig == "call"))
-                if agree == 3:
-                    conf = min(96, conf + 8)
-                elif agree == 2:
-                    conf = min(96, conf + 3)
-                elif agree == 0:
-                    conf = max(35, conf - 6)
-                    watch = True   # histórico todo contra → só observação
-                else:
-                    conf = max(35, conf - 2)
-            if len(closes) > 20:
-                slope_up = closes[-1] > closes[-20]
-                if slope_up == (sig == "call"):
-                    conf = min(96, conf + 3)
-                else:
-                    conf = max(35, conf - 3)
             # --- contexto 5m (multi-timeframe): só velas 5m fechadas ---
             ctx5 = None
             if len(cds) >= 15:
@@ -734,12 +747,13 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
                 if len(keys5) >= 3:
                     up5 = c5[keys5[-1]] > c5[keys5[-3]]
                     ctx5 = "up" if up5 else "down"
-                    if (sig == "call") == up5:
-                        conf = min(96, conf + 4)
-                    else:
-                        conf = max(35, conf - 3)
-                        if agree == 0:
-                            watch = True   # 5m contra + velas contra = observação
+            # confiança = acertividade medida deste tipo de sinal (calibrada)
+            p_cal, n_eff = calib.estimate(CALIB, cls, voter_keys[sig])
+            grade = calib.grade(p_cal, n_eff)
+            if grade == "no_trade" or blocked:
+                return None                  # NO_TRADE: histórico contra / regime
+            conf = int(round(100 * p_cal))
+            watch = grade not in ("forte", "valido")
             hist_ok = mc and ((sig == "call" and mc["hist"] > 0) or
                               (sig == "put" and mc["hist"] < 0))
             mom = "Forte" if (aligned and hist_ok) else \
@@ -748,9 +762,9 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
                    "Média" if atr_pct is not None and atr_pct > 0.33 else "Baixa")
             candle_t = int(cds[-1]["time"]) if cds else 0
             expires_in = max(0, candle_t + 60 - int(time.time()))
-            cls = "crypto" if a.split("_")[0].replace("USD", "") in \
-                ("BTC", "ETH", "XRP", "SOL", "LTC", "DOGE") else "forex"
             return {"asset": a, "signal": sig, "confidence": conf,
+                    "score": raw, "grade": grade, "grade_label": calib.LABEL[grade],
+                    "n_hist": n_eff, "agree3": agree,
                     "cls": cls,
                     "votes": f"{n}/{len(VOTERS)}",
                     "voters": voter_keys[sig],
@@ -787,7 +801,7 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
         seen[key] = True
         deduped.append(r)
     rows = [r for r in deduped if r["confidence"] >= min_conf]
-    rows.sort(key=lambda r: (r["watch"], -r["confidence"]))
+    rows.sort(key=lambda r: (r["watch"], -r["confidence"], -r["score"]))
     rows = rows[:12]                       # ~12 melhores sinais
     _sig_track(rows)
     SIG_CACHE["data"] = {"signals": rows, "scanned": len(assets),
