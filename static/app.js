@@ -62,7 +62,8 @@ async function loadSignals() {
     $("sigScan").textContent = r.connected === false ? "bot offline (SIM)"
       : r.warming ? "a preparar dados…"
       : `${r.scanned} pares · ${new Date(r.ts * 1000).toLocaleTimeString()}`;
-    const st = await api("/api/sigstats");
+    renderSignals(r.signals || []);
+    const st = await api("/api/sigstats").catch(() => null);
     if (st && st.total && st.total.n) {
       const t = st.total, live = st.live || {};
       $("sigAcc").textContent =
@@ -78,7 +79,10 @@ async function loadSignals() {
         ).join("");
     } else if ($("sigAcc"))
       $("sigAcc").textContent = "a medir acertividade… (precisa de ~1min por sinal)";
-    const sigs = r.signals || [];
+  } catch (e) {}
+}
+function renderSignals(sigs) {
+  try {
     $("noSig").style.display = sigs.length ? "none" : "block";
     const card = s => `
       <div class="card" style="border-left:3px solid ${s.signal === "call" ? "var(--g)" : "var(--r)"}${s.watch ? ";opacity:.7" : ""}">

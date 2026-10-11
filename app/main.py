@@ -378,12 +378,13 @@ def _sig_evaluate():
         if not ent or not ent["candles"]:
             continue                      # sem dados — não avaliável
         exit_px = float(ent["candles"][-1]["close"])
-        won = (exit_px > t["entry"]) if t["signal"] == "call" \
-            else (exit_px < t["entry"])
-        if abs(exit_px - t["entry"]) < 1e-9:
-            won = False                    # empate = perda na Quotex
         t["exit"] = exit_px
-        t["result"] = "win" if won else "loss"
+        if abs(exit_px - t["entry"]) < 1e-9 or ent["ts"] < t["emit_ts"]:
+            t["result"] = "void"           # preço parado / feed sem vela nova
+        else:
+            won = (exit_px > t["entry"]) if t["signal"] == "call" \
+                else (exit_px < t["entry"])
+            t["result"] = "win" if won else "loss"
         SIG_RESULTS.append(t)
     SIG_TRACK[:] = keep
     del SIG_RESULTS[:-800]
@@ -402,10 +403,11 @@ async def _sig_tracker():
 
 def strat_weight(k):
     """Peso da estratégia a partir do seu win-rate medido ao vivo.
-    <12 amostras → neutro; <45% → voto vale 0,5; ≥60% → 1,2; ≥70% → 1,4."""
-    rows = [r for r in SIG_RESULTS if k in (r.get("voters") or [])]
+    <30 amostras → neutro; <45% → voto vale 0,7; ≥60% → 1,2; ≥70% → 1,4."""
+    rows = [r for r in SIG_RESULTS
+            if r.get("result") in ("win", "loss") and k in (r.get("voters") or [])]
     n = len(rows)
-    if n < 12:
+    if n < 30:
         return 1.0
     wr = sum(1 for r in rows if r["result"] == "win") / n
     if wr >= 0.70:
@@ -413,17 +415,19 @@ def strat_weight(k):
     if wr >= 0.60:
         return 1.2
     if wr < 0.45:
-        return 0.5
+        return 0.7
     return 1.0
 
 
 def sig_stats():
     """Resumo da acertividade medida por classe/confiança/LIVE vs OBS."""
     def agg(rows):
+        rows = [r for r in rows if r["result"] in ("win", "loss")]
         n = len(rows)
         w = sum(1 for r in rows if r["result"] == "win")
         return {"n": n, "wins": w, "wr": round(100 * w / n, 1) if n else None}
-    out = {"total": agg(SIG_RESULTS), "pending": len(SIG_TRACK)}
+    out = {"total": agg(SIG_RESULTS), "pending": len(SIG_TRACK),
+           "void": sum(1 for r in SIG_RESULTS if r["result"] == "void")}
     for cls in ("forex", "crypto"):
         out[cls] = agg([r for r in SIG_RESULTS if r["cls"] == cls])
     out["live"] = agg([r for r in SIG_RESULTS if not r["watch"]])
@@ -440,7 +444,7 @@ def sig_stats():
     out["recent"] = [{"asset": r["asset"], "signal": r["signal"],
                       "conf": r["conf"], "result": r["result"],
                       "entry": r["entry"], "exit": r["exit"]}
-                     for r in SIG_RESULTS[-20:]]
+                     for r in SIG_RESULTS if r["result"] != "void"][-20:]
     return out
 
 
@@ -643,6 +647,7 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
             closes = [c["close"] for c in cds]
             votes = {"call": 0, "put": 0}
             confs = {"call": [], "put": []}
+            wsum = {"call": 0.0, "put": 0.0}
             voter_keys = {"call": [], "put": []}
             why = []
             for k in VOTERS:
@@ -655,6 +660,7 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
                     continue
                 votes[r["signal"]] += w
                 confs[r["signal"]].append(r["confidence"] * w)
+                wsum[r["signal"]] += w
                 voter_keys[r["signal"]].append(k)
                 why.append(f"{st['name']}: {r['signal']} {r['confidence']}%")
             sig = "call" if votes["call"] > votes["put"] else "put"
@@ -664,7 +670,7 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
                 return None
             watch = n < 3  # <3 votos = em observação; 3+ = sinal pleno
             if confs[sig]:
-                conf = int(sum(confs[sig]) / len(confs[sig]))
+                conf = int(sum(confs[sig]) / wsum[sig])   # média ponderada
                 conf = min(96, conf + (n - 3) * 4)
             else:
                 conf = 45
