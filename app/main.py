@@ -69,6 +69,7 @@ async def _auto_connect():
     asyncio.create_task(_tick_warmer())
     asyncio.create_task(_public_warmer())
     asyncio.create_task(_price_warmer())
+    asyncio.create_task(_sig_tracker())
 
 BOT_PASSWORD = os.getenv("BOT_PASSWORD", "devin")
 TOKENS = set()
@@ -341,6 +342,87 @@ async def patterns_ep(asset: str, period: int = 60, _=Depends(auth)):
 
 SIG_CACHE = {"ts": 0.0, "data": None}
 LAST_SCAN_ERRS = {}          # asset -> última exceção no scan
+SIG_TRACK = []               # sinais emitidos à espera de avaliação
+SIG_RESULTS = []             # sinais avaliados {…, result, exit}
+_SIG_SEEN = set()            # dedup de emissão (asset+sig+vela)
+
+
+def _sig_track(rows):
+    """Regista sinais emitidos (dedup por par+direção+vela) para medir a
+    acertividade real: WIN/LOSS avaliado 60s depois pelo preço da cache."""
+    now = time.time()
+    for r in rows:
+        k = (r["asset"], r["signal"], r.get("sig_id"))
+        if k in _SIG_SEEN:
+            continue
+        _SIG_SEEN.add(k)
+        SIG_TRACK.append({"asset": r["asset"], "signal": r["signal"],
+                          "entry": r["price"], "conf": r["confidence"],
+                          "watch": r["watch"], "cls": r["cls"],
+                          "emit_ts": now, "due": now + 60})
+    del SIG_TRACK[:-600]
+    if len(_SIG_SEEN) > 5000:
+        _SIG_SEEN.clear()
+
+
+def _sig_evaluate():
+    """Avalia sinais vencidos: compara o preço atual da cache com a entrada."""
+    now = time.time()
+    keep = []
+    for t in SIG_TRACK:
+        if t["due"] > now:
+            keep.append(t)
+            continue
+        ent = CANDLE_CACHE.get(t["asset"])
+        if not ent or not ent["candles"]:
+            continue                      # sem dados — não avaliável
+        exit_px = float(ent["candles"][-1]["close"])
+        won = (exit_px > t["entry"]) if t["signal"] == "call" \
+            else (exit_px < t["entry"])
+        if abs(exit_px - t["entry"]) < 1e-9:
+            won = False                    # empate = perda na Quotex
+        t["exit"] = exit_px
+        t["result"] = "win" if won else "loss"
+        SIG_RESULTS.append(t)
+    SIG_TRACK[:] = keep
+    del SIG_RESULTS[:-800]
+
+
+async def _sig_tracker():
+    """Avalia sinais emitidos ao fim de 60s — acertividade medida, não suposta."""
+    import asyncio
+    while True:
+        try:
+            _sig_evaluate()
+        except Exception:
+            pass
+        await asyncio.sleep(15)
+
+
+def sig_stats():
+    """Resumo da acertividade medida por classe/confiança/LIVE vs OBS."""
+    def agg(rows):
+        n = len(rows)
+        w = sum(1 for r in rows if r["result"] == "win")
+        return {"n": n, "wins": w, "wr": round(100 * w / n, 1) if n else None}
+    out = {"total": agg(SIG_RESULTS), "pending": len(SIG_TRACK)}
+    for cls in ("forex", "crypto"):
+        out[cls] = agg([r for r in SIG_RESULTS if r["cls"] == cls])
+    out["live"] = agg([r for r in SIG_RESULTS if not r["watch"]])
+    out["watch"] = agg([r for r in SIG_RESULTS if r["watch"]])
+    for lo, hi in ((45, 65), (65, 75), (75, 85), (85, 97)):
+        out[f"conf_{lo}_{hi}"] = agg(
+            [r for r in SIG_RESULTS if lo <= r["conf"] < hi])
+    out["recent"] = [{"asset": r["asset"], "signal": r["signal"],
+                      "conf": r["conf"], "result": r["result"],
+                      "entry": r["entry"], "exit": r["exit"]}
+                     for r in SIG_RESULTS[-20:]]
+    return out
+
+
+@app.get("/api/sigstats")
+async def sigstats_ep(_=Depends(auth)):
+    return sig_stats()
 CANDLE_CACHE = {}          # asset -> {"ts": float, "candles": [...], "src": str}
 CANDLES_NEED = 100
 _LAST_TICK = {}            # asset -> último ts de tick processado
@@ -649,6 +731,7 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
     rows = [r for r in deduped if r["confidence"] >= min_conf]
     rows.sort(key=lambda r: (r["watch"], -r["confidence"]))
     rows = rows[:12]                       # ~12 melhores sinais
+    _sig_track(rows)
     SIG_CACHE["data"] = {"signals": rows, "scanned": len(assets),
                          "cached": len(CANDLE_CACHE),
                          "warming": not CANDLE_CACHE and engine.connected,

@@ -62,6 +62,15 @@ async function loadSignals() {
     $("sigScan").textContent = r.connected === false ? "bot offline (SIM)"
       : r.warming ? "a preparar dados…"
       : `${r.scanned} pares · ${new Date(r.ts * 1000).toLocaleTimeString()}`;
+    const st = await api("/api/sigstats");
+    if (st && st.total && st.total.n) {
+      const t = st.total, live = st.live || {};
+      $("sigAcc").textContent =
+        `acertividade medida: ${t.wr}% (${t.wins}/${t.n}) · LIVE ${live.wr ?? "—"}% (${live.n ?? 0})` +
+        ` · forex ${(st.forex || {}).wr ?? "—"}% · cripto ${(st.crypto || {}).wr ?? "—"}%`;
+      $("sigAcc").style.display = "";
+    } else if ($("sigAcc"))
+      $("sigAcc").textContent = "a medir acertividade… (precisa de ~1min por sinal)";
     const sigs = r.signals || [];
     $("noSig").style.display = sigs.length ? "none" : "block";
     const card = s => `
