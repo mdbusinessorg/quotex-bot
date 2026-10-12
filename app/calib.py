@@ -81,8 +81,9 @@ def grade(p, n_eff):
     valido — p ≥ breakeven (53,5%) com ≥30 amostras
     obs    — sem vantagem demonstrada ainda (poucas amostras ou p ~50%)
     no_trade — p < 47% com ≥40 amostras: histórico contra, não apresentar"""
-    if n_eff >= 60 and p < 0.45:
-        return "no_trade"
+    # "no_trade" nunca por grade(): esconder é só decisão de no_trade_exact()
+    # (conjunto exacto ≥60 amostras) — caso contrário o sistema bloqueia-se
+    # num estado de onde já não recolhe evidência para melhorar.
     if n_eff >= 50 and p >= 0.58:
         return "forte"
     if n_eff >= 30 and p >= BREAKEVEN:

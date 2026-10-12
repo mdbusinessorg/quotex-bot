@@ -35,10 +35,11 @@ def test_large_sample_converges_and_grades():
     assert calib.grade(p, n) == "forte"
 
 
-def test_no_trade_when_history_against():
-    t = calib.build(_res(100, 30))           # 30%
+def test_no_trade_never_from_grade():
+    t = calib.build(_res(100, 30))           # 30% — mau mas grade não esconde
     p, n = calib.estimate(t, "forex", ["ai_turbo", "bible_sr"])
-    assert calib.grade(p, n) == "no_trade"
+    assert calib.grade(p, n) in ("obs", "sem_dados")
+    assert calib.no_trade_exact(t, "forex", ["ai_turbo", "bible_sr"]) is True
 
 
 def test_other_class_barely_affected():
