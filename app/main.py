@@ -633,7 +633,9 @@ async def sigdiag(_=Depends(auth)):
     import traceback as _tb
     out = {}
     VOTERS = ["ai_turbo", "multi_indicator", "rsi_momentum", "macd_momentum",
-              "momentum", "bible_sr", "price_action", "breakout"]
+              "momentum", "bible_sr", "price_action", "breakout",
+              "bible_engulfing", "bible_pinbar", "q_reversao", "q_pullback",
+              "q_breakout_retest", "q_range_fade", "q_mtf"]
     for a, ent in CANDLE_CACHE.items():
         cds = ent["candles"]
         info = {"src": ent.get("src"), "age_s": round(time.time() - ent["ts"], 1),
@@ -674,7 +676,9 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
     import asyncio
     # Precisão: sinal só aparece com confluência de estratégias independentes
     VOTERS = ["ai_turbo", "multi_indicator", "rsi_momentum", "macd_momentum",
-              "momentum", "bible_sr", "price_action", "breakout"]
+              "momentum", "bible_sr", "price_action", "breakout",
+              "bible_engulfing", "bible_pinbar", "q_reversao", "q_pullback",
+              "q_breakout_retest", "q_range_fade", "q_mtf"]
     assets = _target_assets()
 
     async def scan(a):
@@ -788,6 +792,7 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
                     "rsi": round(rsi_v, 1) if rsi_v else None,
                     "trend": trend, "momentum": mom, "volatility": vol,
                     "pattern": pat_hit or "—",
+                    "src": cached.get("src"),
                     "regime_ok": not blocked,
                     "stale": bool(cds and time.time() - (cds[-1]["time"] or 0) > 300),
                     "suggested_expiry": 60}

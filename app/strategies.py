@@ -391,6 +391,112 @@ def s_bible_sr(c):
     return NO
 
 
+# ---- Estratégias compostas Quantum (brief MEGABRAIN v4) ----
+# Regras Nison/bíblia dos candles + contexto; testadas OOS em _research/oos_test.py
+# (nenhuma demonstrou vantagem isolada — ficam registadas como votantes
+# medidos pela calibração live, como todas as outras).
+
+def s_q_reversao(c):
+    """Reversão confirmada: engolfo/pinbar junto ao extremo de 20 velas."""
+    if len(c) < 45:
+        return NO
+    last, prev = c[-1], c[-2]
+    lo = min(x["low"] for x in c[-21:-1]); hi = max(x["high"] for x in c[-21:-1])
+    a = I.atr(c, 14) or 0
+    if a <= 0:
+        return NO
+    body = abs(last["close"] - last["open"])
+    pbody = abs(prev["close"] - prev["open"])
+    rng = last["high"] - last["low"]
+    if (last["close"] > last["open"] and prev["close"] < prev["open"]
+            and body > pbody * 1.2 and last["close"] > prev["open"]
+            and last["open"] <= prev["close"] and last["low"] <= lo + 0.3 * a):
+        return _res("call", 62, ["engolfo bullish no mínimo de 20 velas"], "MEDIUM")
+    if (last["close"] < last["open"] and prev["close"] > prev["open"]
+            and body > pbody * 1.2 and last["close"] < prev["open"]
+            and last["open"] >= prev["close"] and last["high"] >= hi - 0.3 * a):
+        return _res("put", 62, ["engolfo bearish no máximo de 20 velas"], "MEDIUM")
+    if rng > 0.5 * a:
+        lo_w = min(last["open"], last["close"]) - last["low"]
+        hi_w = last["high"] - max(last["open"], last["close"])
+        if lo_w > 2 * body and last["low"] <= lo + 0.2 * a:
+            return _res("call", 60, ["pinbar/hammer a rejeitar o mínimo"], "MEDIUM")
+        if hi_w > 2 * body and last["high"] >= hi - 0.2 * a:
+            return _res("put", 60, ["shooting star a rejeitar o máximo"], "MEDIUM")
+    return NO
+
+
+def s_q_pullback(c):
+    """Continuação: EMA8>EMA21 + retração à EMA8 + rejeição na direção."""
+    if len(c) < 45:
+        return NO
+    cl = closes(c)
+    e8 = I.ema_series(cl, 8); e21 = I.ema_series(cl, 21)
+    if not e8 or not e21:
+        return NO
+    last = c[-1]
+    body = abs(last["close"] - last["open"])
+    lo_w = min(last["open"], last["close"]) - last["low"]
+    hi_w = last["high"] - max(last["open"], last["close"])
+    if e8[-1] > e21[-1] and last["low"] <= e8[-1] and lo_w > body:
+        return _res("call", 60, ["retração à EMA8 em tendência de alta rejeitada"], "MEDIUM")
+    if e8[-1] < e21[-1] and last["high"] >= e8[-1] and hi_w > body:
+        return _res("put", 60, ["retração à EMA8 em tendência de baixa rejeitada"], "MEDIUM")
+    return NO
+
+
+def s_q_breakout_retest(c):
+    """Rompimento + reteste: fechou acima/abaixo do extremo 20 há 1-3 velas,
+    retestou o nível e fechou a favor."""
+    if len(c) < 45:
+        return NO
+    hi = max(x["high"] for x in c[-23:-3]); lo = min(x["low"] for x in c[-23:-3])
+    for j in (-2, -3):
+        if c[j]["close"] > hi:
+            r = c[-1]
+            if r["low"] <= hi * 1.0001 and r["close"] > hi and r["close"] > r["open"]:
+                return _res("call", 62, ["breakout de máxima + reteste"], "HIGH")
+            break
+        if c[j]["close"] < lo:
+            r = c[-1]
+            if r["high"] >= lo * 0.9999 and r["close"] < lo and r["close"] < r["open"]:
+                return _res("put", 62, ["breakout de mínima + reteste"], "HIGH")
+            break
+    return NO
+
+
+def s_q_range_fade(c):
+    """Mercado lateral: amplitude 20 < 4*ATR → fade nos extremos."""
+    if len(c) < 45:
+        return NO
+    hi = max(x["high"] for x in c[-20:]); lo = min(x["low"] for x in c[-20:])
+    a = I.atr(c, 14) or 0
+    if a <= 0 or (hi - lo) > 4 * a:
+        return NO
+    last = c[-1]
+    if last["close"] <= lo + 0.25 * (hi - lo) and last["close"] > last["open"]:
+        return _res("call", 58, ["rejeição do fundo do range"], "MEDIUM")
+    if last["close"] >= hi - 0.25 * (hi - lo) and last["close"] < last["open"]:
+        return _res("put", 58, ["rejeição do topo do range"], "MEDIUM")
+    return NO
+
+
+def s_q_mtf(c):
+    """Multitemporal: direção das últimas 5 velas (proxy 5m) + RSI em contra
+    + vela a favor."""
+    if len(c) < 45:
+        return NO
+    up5 = c[-1]["close"] > c[-5]["close"]
+    r = I.rsi(closes(c), 14)
+    if r is None:
+        return NO
+    if up5 and r < 45 and c[-1]["close"] > c[-1]["open"]:
+        return _res("call", 58, ["tendência 5m alta + RSI em retração"], "MEDIUM")
+    if not up5 and r > 55 and c[-1]["close"] < c[-1]["open"]:
+        return _res("put", 58, ["tendência 5m baixa + RSI em retração"], "MEDIUM")
+    return NO
+
+
 STRATEGIES = {
     "trend_following": {"name": "Trend Following", "fn": s_trend_following,
                         "desc": "Segue a tendência definida por SMA20/SMA50 (Covel).", "min_candles": 55},
@@ -447,4 +553,19 @@ STRATEGIES = {
                  "desc": "Setup completo do Bible: pin/engulfing/inside bar "
                          "em zona de suporte-resistência → entrada imediata.",
                  "min_candles": 35},
+    "q_reversao": {"name": "Q: Reversão Confirmada", "fn": s_q_reversao,
+                   "desc": "Engolfo/pinbar junto ao extremo de 20 velas.",
+                   "min_candles": 30},
+    "q_pullback": {"name": "Q: Pullback de Tendência", "fn": s_q_pullback,
+                   "desc": "EMA8/EMA21 + retração à EMA8 com rejeição.",
+                   "min_candles": 30},
+    "q_breakout_retest": {"name": "Q: Breakout+Reteste", "fn": s_q_breakout_retest,
+                          "desc": "Rompimento do extremo 20 + reteste a favor.",
+                          "min_candles": 30},
+    "q_range_fade": {"name": "Q: Fade de Range", "fn": s_q_range_fade,
+                     "desc": "Mercado lateral (amp<4ATR): fade nos extremos.",
+                     "min_candles": 30},
+    "q_mtf": {"name": "Q: Multi-Timeframe", "fn": s_q_mtf,
+              "desc": "Direção 5m + RSI em retração + vela a favor.",
+              "min_candles": 30},
 }

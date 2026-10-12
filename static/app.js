@@ -95,6 +95,7 @@ function renderSignals(sigs) {
           <span class="tag" title="acertividade medida deste tipo de sinal (${s.n_hist ?? 0} amostras)">acerto medido ${s.confidence}% · n=${s.n_hist ?? 0}</span>
           <span class="tag" title="score heurístico das estratégias (não é probabilidade)">score ${s.score ?? "—"}</span>
           <span class="tag">votos ${s.votes}</span>
+          ${s.asset.endsWith("_otc") && s.src === "yahoo" ? '<span class="tag" title="preços de mercado reais (Yahoo) — não são os preços OTC da corretora">aprox</span>' : ""}
           <span class="tag">expiração ${s.suggested_expiry >= 60 ? (s.suggested_expiry / 60) + " min" : s.suggested_expiry + "s"}</span>
           ${s.expires_in != null ? `<span class="tag" style="color:var(--y)">⏱ ${s.expires_in}s</span>` : ""}
           ${s.sig_time ? `<span class="tag">${new Date(s.sig_time * 1000).toLocaleTimeString()}</span>` : ""}
