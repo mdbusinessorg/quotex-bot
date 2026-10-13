@@ -39,7 +39,9 @@ async def _auto_connect():
     automaticamente ao arrancar (conta já logada)."""
     import os, asyncio
     engine._main_loop = asyncio.get_running_loop()
-    ssid = history.kv_get("ssid") or os.getenv("QUOTEX_SSID")
+    # A variável do servidor é a sessão administrada actualmente. O valor
+    # persistido no painel pode ter expirado e não deve sobrepor-se a ela.
+    ssid = os.getenv("QUOTEX_SSID") or history.kv_get("ssid")
     email = os.getenv("QUOTEX_EMAIL")
     password = os.getenv("QUOTEX_PASSWORD")
     account = history.kv_get("account") or os.getenv("QUOTEX_ACCOUNT", "REAL")
@@ -52,7 +54,7 @@ async def _auto_connect():
                 try:
                     ok, msg = await engine.connect_real(
                         email, password,
-                        history.kv_get("ssid") or ssid,
+                        os.getenv("QUOTEX_SSID") or history.kv_get("ssid") or ssid,
                         history.kv_get("account") or account)
                     log.info("auto-connect t%d: %s %s", i, ok, msg)
                     if ok:
