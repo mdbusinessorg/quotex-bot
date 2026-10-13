@@ -57,11 +57,21 @@ def estimate(tables, cls, voters):
     return _shrink(g[0], g[1], PRIOR, 100), 0
 
 
+def set_stats(tables, cls, voters):
+    """(n, wins, p encolhido) do conjunto EXACTO de votantes — a prova
+    empírica daquela combinação específica, sem fallback hierárquico."""
+    voters = sorted(voters or [])
+    if not voters:
+        return 0, 0, PRIOR
+    n, w = tables.get("set", {}).get((cls, tuple(voters)), [0, 0])
+    return n, w, _shrink(n, w, PRIOR, 30)
+
+
 def no_trade_exact(tables, cls, voters):
     """NO_TRADE só com evidência forte a nível exacto — nunca por classe
     inteira (deadlock: sem sinais → sem amostras → nunca destranca).
-    2+ estratégias a votar → líder p<45% com ≥60 amostras;
-    1 estratégia → p<45% com ≥80 (a 'líder' é o conjunto inteiro)."""
+    2+ estratégias a votar → conjunto p<45% com ≥60 amostras;
+    1 estratégia → líder p<45% com ≥80 (a 'líder' é o conjunto inteiro)."""
     voters = sorted(voters or [])
     if not voters:
         return False
@@ -73,6 +83,19 @@ def no_trade_exact(tables, cls, voters):
         if l[0] >= 80 and _shrink(l[0], l[1], PRIOR, 30) < 0.45:
             return True
     return False
+
+
+def grade_set(n, p):
+    """Categoria baseada APENAS na prova do conjunto exacto:
+    forte  — p ≥ 58% com ≥50 amostras
+    valido — p ≥ breakeven (53,5%) com ≥30 amostras
+    obs    — sem prova suficiente do conjunto
+    (no_trade é decidido por no_trade_exact, não aqui)"""
+    if n >= 50 and p >= 0.58:
+        return "forte"
+    if n >= 30 and p >= BREAKEVEN:
+        return "valido"
+    return "obs" if n >= 10 else "sem_dados"
 
 
 def grade(p, n_eff):

@@ -49,7 +49,7 @@ def test_other_class_barely_affected():
 
 
 def test_no_trade_exact_needs_strong_evidence():
-    t = calib.build(_res(50, 15))            # 30% mas só 50 amostras
+    t = calib.build(_res(35, 10))            # ~29% mas só 35 amostras (<40)
     assert calib.no_trade_exact(t, "forex", ["ai_turbo", "bible_sr"]) is False
     t = calib.build(_res(100, 25))           # 25% com 100 do MESMO conjunto
     assert calib.no_trade_exact(t, "forex", ["ai_turbo", "bible_sr"]) is True
@@ -60,7 +60,7 @@ def test_no_trade_exact_needs_strong_evidence():
 
 
 def test_no_trade_exact_never_on_few_voters():
-    t = calib.build(_res(50, 5, voters=["ai_turbo"]))   # 10% mas só 50
+    t = calib.build(_res(30, 3, voters=["ai_turbo"]))   # 10% mas só 30 (<40)
     assert calib.no_trade_exact(t, "forex", ["ai_turbo"]) is False
     assert calib.no_trade_exact(t, "forex", []) is False
 

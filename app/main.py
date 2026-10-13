@@ -762,11 +762,14 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
                     ctx5 = "up" if up5 else "down"
             # confiança = acertividade medida deste tipo de sinal (calibrada)
             p_cal, n_eff = calib.estimate(CALIB, cls, voter_keys[sig])
-            grade = calib.grade(p_cal, n_eff)
+            n_set, _w_set, p_set = calib.set_stats(CALIB, cls, voter_keys[sig])
             if calib.no_trade_exact(CALIB, cls, voter_keys[sig]):
-                return None                  # NO_TRADE: evidência forte contra                  # NO_TRADE: evidência forte contra
+                return None                  # NO_TRADE: evidência forte contra
+            # LIVE (FORTE/VÁLIDO) só quando o conjunto EXACTO de votantes
+            # tem prova medida — combinações emprestadas ficam em OBSERVAÇÃO
+            grade = calib.grade_set(n_set, p_set)
             conf = int(round(100 * p_cal))
-            watch = grade not in ("forte", "valido")
+            watch = grade not in ("forte", "valido") or len(voter_keys[sig]) < 2
             hist_ok = mc and ((sig == "call" and mc["hist"] > 0) or
                               (sig == "put" and mc["hist"] < 0))
             mom = "Forte" if (aligned and hist_ok) else \
