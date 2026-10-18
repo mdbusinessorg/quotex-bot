@@ -75,13 +75,9 @@ async def _cmds():
                 await engine.set_account(mode)
                 history.kv_set("account", mode)
                 res = {"ok": True, "balance": await engine.balance()}
-            elif k == "trade":
-                t = await engine.manual_trade(
-                    p["asset"], p["amount"], p["expiry"], p["direction"],
-                    p.get("strategy", "manual"))
-                res = {"ok": True, "trade": t, "mode": t.get("mode")}
-            elif k == "autobot_start":
-                res = {"ok": engine.autobot_start(p)}
+            elif k in ("trade", "autobot_start"):
+                res = {"ok": False,
+                       "msg": "trading desactivado — painel só de sinais"}
             elif k == "autobot_stop":
                 engine.autobot_stop()
                 res = {"ok": True}
