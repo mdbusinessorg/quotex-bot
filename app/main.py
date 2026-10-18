@@ -934,7 +934,8 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
             rows.append(r)
     rows = rows[:12]                       # ~12 melhores sinais
     _sig_track(rows)
-    SIG_CACHE["data"] = {"signals": rows, "scanned": len(assets),
+    SIG_CACHE["data"] = {"signals": rows, "all": deduped,
+                         "scanned": len(assets),
                          "cached": len(CANDLE_CACHE),
                          "quotex_feed": sum(1 for e in CANDLE_CACHE.values()
                                             if e.get("src") == "quotex"),

@@ -36,6 +36,45 @@ async def kv_put(k, v):
         log.warning("kv_put %s: %s", k, e)
 
 
+async def state_put(k, v):
+    """Escreve bot_state (payloads do worker: signals/status/sigstats)."""
+    if not enabled():
+        return
+    def _w():
+        _req("POST", "bot_state?on_conflict=k",
+             {"k": k, "v": v},
+             prefer="resolution=merge-duplicates,return=minimal")
+    try:
+        await asyncio.to_thread(_w)
+    except Exception as e:
+        log.warning("state_put %s: %s", k, e)
+
+
+async def cmds_pending():
+    """Comandos pendentes escritos pelo painel (edge function qx-panel)."""
+    if not enabled():
+        return []
+    def _r():
+        return _req("GET", "bot_cmds?done=is.false&order=id.asc&limit=10") or []
+    try:
+        return await asyncio.to_thread(_r)
+    except Exception as e:
+        log.warning("cmds_pending: %s", e)
+        return []
+
+
+async def cmd_done(cid, result):
+    if not enabled():
+        return
+    def _w():
+        _req("PATCH", f"bot_cmds?id=eq.{cid}",
+             {"done": True, "result": result})
+    try:
+        await asyncio.to_thread(_w)
+    except Exception as e:
+        log.warning("cmd_done: %s", e)
+
+
 async def feed_get():
     """Lê quotex_feed (candles reais escritos pelo relay Supabase).
     Devolve {asset: {"candles": [...], "ticks": [...], "updated_at": str}}."""

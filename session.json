@@ -3,5 +3,10 @@
         "cookies": null,
         "token": null,
         "user_agent": "Quotex/1.0"
+    },
+    "": {
+        "cookies": "lang=pt",
+        "token": "TExVJJaiGzcmVzSptFma2DZt9OmZpCexCEy1gUTh",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
     }
 }

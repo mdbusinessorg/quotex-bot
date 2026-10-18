@@ -1,0 +1,41 @@
+name: pinhanha-worker
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/30 * * * *"
+concurrency:
+  group: pinhanha-worker
+  cancel-in-progress: false
+jobs:
+  worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 345
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ hashFiles('requirements.txt') }}
+      - run: pip install -r requirements.txt
+      - name: worker (ate ~5h40m, depois re-despacha)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          QUOTEX_SSID: ${{ secrets.QUOTEX_SSID }}
+          QUOTEX_EMAIL: ${{ secrets.QUOTEX_EMAIL }}
+          QUOTEX_PASSWORD: ${{ secrets.QUOTEX_PASSWORD }}
+          QUOTEX_ACCOUNT: ${{ secrets.QUOTEX_ACCOUNT }}
+          BOT_PASSWORD: ${{ secrets.BOT_PASSWORD }}
+          WORKER_SECONDS: "20400"
+        run: python -m app.worker
+      - name: requeue proximo run
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          gh api -X POST
+          "repos/$GITHUB_REPOSITORY/actions/workflows/pinhanha-worker.yml/dispatches"
+          -f ref=main || true
