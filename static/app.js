@@ -59,9 +59,16 @@ async function loadSignals() {
     const mc = ($("sigMinConf") && $("sigMinConf").value) || 55;
     const r = await api("/api/signals?min_conf=" + mc);
     _sigTs = r.ts || Date.now() / 1000;
-    $("sigScan").textContent = r.connected === false ? "bot offline (SIM)"
+    const offline = r.connected === false, nofeed = r.connected && !r.quotex_feed;
+    $("sigScan").textContent = offline ? "bot offline (SIM)"
+      : nofeed ? "a ligar ao gráfico real da Quotex…"
       : r.warming ? "a preparar dados…"
-      : `${r.scanned} pares · ${new Date(r.ts * 1000).toLocaleTimeString()}`;
+      : `${r.scanned} pares · gráfico Quotex · ${new Date(r.ts * 1000).toLocaleTimeString()}`;
+    if ($("noSig"))
+      $("noSig").textContent = offline
+        ? "Sem ligação à Quotex — sinais reais pausados. Liga em Conta & Ligação."
+        : nofeed ? "A obter o gráfico real da Quotex — os sinais aparecem quando os dados chegarem."
+        : "A varrer os pares — sem oportunidade com vantagem neste momento (NO TRADE).";
     renderSignals(r.signals || []);
     const st = await api("/api/sigstats").catch(() => null);
     if (st && st.total && st.total.n) {

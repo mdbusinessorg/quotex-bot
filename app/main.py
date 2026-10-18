@@ -365,6 +365,7 @@ def _sig_track(rows):
         _SIG_SEEN.add(sid)
         new.append({"id": sid, "asset": r["asset"], "signal": r["signal"],
                     "entry": r["price"], "conf": r["confidence"],
+                    "src": r.get("src"),
                     "watch": r["watch"], "cls": r["cls"],
                     "voters": r.get("voters") or [], "ctx5": r.get("ctx5"),
                     "emit_ts": now, "due": now + 60, "result": "pending",
@@ -386,6 +387,16 @@ def _sig_evaluate():
             keep.append(t)
             continue
         ent = CANDLE_CACHE.get(t["asset"])
+        # avaliar no MESMO feed que gerou o sinal — preço Yahoo ≠ preço Quotex
+        if not ent or (t.get("src") and ent.get("src") != t["src"]):
+            if now - t["due"] < 600:
+                keep.append(t)            # feed ausente/trocado — espera
+                continue
+            t["result"] = "void"
+            t["eval_ts"] = now
+            SIG_RESULTS.append(t)
+            done.append(t)
+            continue
         cds = ent["candles"]
         if not cds:
             if now - t["due"] < 600:
@@ -507,10 +518,17 @@ def _target_assets():
     return out
 
 
-def _merge_ticks(asset, ticks):
-    """Junta ticks ao vivo à vela de 1m em formação na cache."""
+def _merge_ticks(asset, ticks, src):
+    """Junta ticks ao vivo à vela de 1m em formação na cache.
+    Nunca mistura feeds: candles Yahoo e ticks Quotex são séries de preços
+    diferentes — juntá-los gerava sinais que falhavam na corretora."""
     ent = CANDLE_CACHE.get(asset)
     if not ent:
+        if src != "quotex":
+            return
+        ent = CANDLE_CACHE[asset] = {"ts": time.time(), "candles": [],
+                                     "src": src}
+    if ent.get("src") != src:
         return
     cds = ent["candles"]
     last = _LAST_TICK.get(asset, 0)
@@ -532,6 +550,7 @@ def _merge_ticks(asset, ticks):
             cds.append({"time": b, "open": p, "high": p,
                         "low": p, "close": p})
             del cds[:-CANDLES_NEED]
+    ent["ts"] = time.time()
     _LAST_TICK[asset] = last
 
 
@@ -556,7 +575,7 @@ async def _tick_warmer():
                 prices = getattr(api, "realtime_price", None) or {}
                 for a in _target_assets():
                     if prices.get(a):
-                        _merge_ticks(a, prices[a])
+                        _merge_ticks(a, prices[a], "quotex")
             else:
                 subscribed = False
         except Exception as e:
@@ -574,8 +593,10 @@ async def _public_warmer():
         try:
             async def one(a):
                 ent = CANDLE_CACHE.get(a)
+                if ent and ent.get("src") == "quotex":
+                    return   # dados reais da corretora — nunca substituir por Yahoo
                 if ent and time.time() - ent["ts"] < 12:
-                    return   # fresco (quotex ou yahoo) — poupa pedidos
+                    return   # fresco — poupa pedidos
                 cds = await public_feed.fetch_candles(a, CANDLES_NEED)
                 if cds:
                     CANDLE_CACHE[a] = {"ts": time.time(), "candles": cds,
@@ -598,9 +619,7 @@ async def _price_warmer():
         try:
             prices = await public_feed.fetch_prices(_target_assets())
             for a, tk in prices.items():
-                # se houver ticks da Quotex nos últimos 8s, a Quotex manda
-                if time.time() - _LAST_TICK.get(a, 0) > 8:
-                    _merge_ticks(a, [tk])
+                _merge_ticks(a, [tk], "yahoo")   # ignora entradas Quotex
         except Exception as e:
             log.warning("price warmer: %s", e)
         await asyncio.sleep(6)
@@ -686,7 +705,11 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
     async def scan(a):
         try:
             cached = CANDLE_CACHE.get(a)
-            if not cached or time.time() - cached["ts"] >= 300:
+            # Só o gráfico real da Quotex gera sinais — dados Yahoo são uma
+            # série de preços diferente (sobretudo OTC) e produziam sinais
+            # que falhavam sistematicamente na corretora.
+            if not cached or cached.get("src") != "quotex" or \
+                    time.time() - cached["ts"] >= 300:
                 return None
             cds = cached["candles"]
             closes = [c["close"] for c in cds]
@@ -835,6 +858,8 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
     _sig_track(rows)
     SIG_CACHE["data"] = {"signals": rows, "scanned": len(assets),
                          "cached": len(CANDLE_CACHE),
+                         "quotex_feed": sum(1 for e in CANDLE_CACHE.values()
+                                            if e.get("src") == "quotex"),
                          "warming": not CANDLE_CACHE and engine.connected,
                          "connected": engine.connected,
                          "ts": __import__("time").time()}
