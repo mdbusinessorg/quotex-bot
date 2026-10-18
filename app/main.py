@@ -147,7 +147,25 @@ async def diag(_=Depends(auth)):
     urls = [
         "wss://ws2.quotex.com/socket.io/?EIO=3&transport=websocket",
         "wss://ws2.quotex.com/socket.io/?EIO=4&transport=websocket",
+        "wss://ws.qxbroker.com/socket.io/?EIO=3&transport=websocket",
+        "wss://ws2.qxbroker.com/socket.io/?EIO=3&transport=websocket",
     ]
+    # handshake socket.io por HTTPS long-polling — Cloudflare rate-limits o
+    # upgrade WS por IP; pedidos GET/POST normais podem passar
+    for host in ("ws2.quotex.com", "ws.quotex.com", "ws.qxbroker.com"):
+        for eio in ("3", "4"):
+            u = f"https://{host}/socket.io/?EIO={eio}&transport=polling"
+            try:
+                s = AsyncSession(impersonate="chrome")
+                r = await s.get(u, timeout=15, headers={
+                    "Origin": "https://quotex.com",
+                    "Referer": "https://quotex.com/pt/trade",
+                    "Cookie": "lang=pt"})
+                out[u] = {"status": r.status_code,
+                          "body": r.text[:200]}
+            except Exception as e:
+                out[u] = {"err": str(e)[:160]}
+            await asyncio.sleep(0)
     for u in urls:
         rec = {"msgs": []}
         try:
