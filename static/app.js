@@ -59,7 +59,8 @@ async function loadSignals() {
     const mc = ($("sigMinConf") && $("sigMinConf").value) || 55;
     const r = await api("/api/signals?min_conf=" + mc);
     _sigTs = r.ts || Date.now() / 1000;
-    const offline = r.connected === false, nofeed = r.connected && !r.quotex_feed;
+    const offline = r.connected === false && !r.quotex_feed,
+          nofeed = !r.quotex_feed;
     $("sigScan").textContent = offline ? "bot offline (SIM)"
       : nofeed ? "a ligar ao gráfico real da Quotex…"
       : r.warming ? "a preparar dados…"
