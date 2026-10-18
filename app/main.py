@@ -688,6 +688,13 @@ async def _relay_warmer():
                         and time.time() - ent["ts"] < 12):
                     continue
                 CANDLE_CACHE[a] = {"ts": ts, "candles": cds, "src": "quotex"}
+                # tick ao vivo do relay na vela em formação — o sinal
+                # aparece no início do minuto, não só no fecho da vela
+                tks = [{"time": t["t"], "price": t["p"]}
+                       for t in (row.get("ticks") or []) if t.get("t")]
+                if tks and time.time() - ts < 150:
+                    _merge_ticks(a, tks, "quotex")
+                    CANDLE_CACHE[a]["ts"] = ts   # freshness = linha do feed
                 n += 1
             log.info("relay: %d activos do quotex_feed (total cache %d)",
                      n, len(CANDLE_CACHE))
