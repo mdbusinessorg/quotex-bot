@@ -69,10 +69,18 @@ async def _auto_connect():
             logging.getLogger("startup").warning("auto-connect falhou: %s", e)
         if not engine.connected:
             asyncio.create_task(_retry())
+    # Propaga a sessão Quotex actual para o relay Supabase (edge function
+    # qx-relay lê bot_kv.quotex_ssid e escreve candles em quotex_feed).
+    if os.getenv("QUOTEX_SSID"):
+        try:
+            await sigstore.kv_put("quotex_ssid", os.environ["QUOTEX_SSID"])
+        except Exception as e:
+            logging.getLogger("startup").warning("bot_kv ssid: %s", e)
     asyncio.create_task(_candle_warmer())
     asyncio.create_task(_tick_warmer())
     asyncio.create_task(_public_warmer())
     asyncio.create_task(_price_warmer())
+    asyncio.create_task(_relay_warmer())
     asyncio.create_task(_sig_tracker())
 
 BOT_PASSWORD = os.getenv("BOT_PASSWORD", "devin")
@@ -116,6 +124,11 @@ async def broker_connect(b: BrokerLogin, _=Depends(auth)):
     if ok:
         if b.ssid:
             history.kv_set("ssid", b.ssid)
+            # relay Supabase usa esta sessão para o gráfico real
+            try:
+                await sigstore.kv_put("quotex_ssid", b.ssid)
+            except Exception:
+                pass
         history.kv_set("account", b.account)
     return {"ok": ok, "msg": str(msg), "balance": await engine.balance()}
 
@@ -641,6 +654,46 @@ async def _price_warmer():
         except Exception as e:
             log.warning("price warmer: %s", e)
         await asyncio.sleep(6)
+
+
+async def _relay_warmer():
+    """Candles reais da Quotex via relay Supabase (tabela quotex_feed,
+    escrita pela edge function qx-relay a cada minuto). Única fonte de
+    dados reais quando a engine não consegue ligar directamente — o IP do
+    Render está bloqueado pela Cloudflare, o egresso do Supabase não."""
+    import asyncio
+    from datetime import datetime
+    log = logging.getLogger("relay")
+    while True:
+        try:
+            if not sigstore.enabled():
+                await asyncio.sleep(30); continue
+            feed = await sigstore.feed_get()
+            n = 0
+            for a, row in feed.items():
+                cds = row.get("candles") or []
+                if len(cds) < 30:
+                    continue
+                # freshness vem do updated_at da linha — se o relay morrer,
+                # a entrada envelhece e o scan pausa sinais (honesto).
+                try:
+                    ua = row.get("updated_at") or ""
+                    ts = datetime.fromisoformat(
+                        ua.replace("Z", "+00:00")).timestamp()
+                except Exception:
+                    ts = time.time() - 120
+                ent = CANDLE_CACHE.get(a)
+                # engine directa fresca ganha (mesma fonte, mais granular)
+                if (ent and ent.get("src") == "quotex"
+                        and time.time() - ent["ts"] < 12):
+                    continue
+                CANDLE_CACHE[a] = {"ts": ts, "candles": cds, "src": "quotex"}
+                n += 1
+            log.info("relay: %d activos do quotex_feed (total cache %d)",
+                     n, len(CANDLE_CACHE))
+        except Exception as e:
+            log.warning("relay warmer: %s", e)
+        await asyncio.sleep(15)
 
 
 async def _candle_warmer():

@@ -22,6 +22,35 @@ def enabled():
     return bool(URL and KEY)
 
 
+async def kv_put(k, v):
+    """Escreve bot_kv (relay Quotex usa quotex_ssid). Best-effort."""
+    if not enabled():
+        return
+    def _w():
+        _req("POST", "bot_kv?on_conflict=k",
+             {"k": k, "v": v},
+             prefer="resolution=merge-duplicates,return=minimal")
+    try:
+        await asyncio.to_thread(_w)
+    except Exception as e:
+        log.warning("kv_put %s: %s", k, e)
+
+
+async def feed_get():
+    """Lê quotex_feed (candles reais escritos pelo relay Supabase).
+    Devolve {asset: {"candles": [...], "ticks": [...], "updated_at": str}}."""
+    if not enabled():
+        return {}
+    def _r():
+        return _req("GET", "quotex_feed?select=asset,candles,ticks,updated_at") or []
+    try:
+        rows = await asyncio.to_thread(_r)
+        return {r["asset"]: r for r in rows if r.get("asset")}
+    except Exception as e:
+        log.warning("feed_get: %s", e)
+        return {}
+
+
 def _req(method, path, body=None, prefer=None):
     hdr = {"apikey": KEY, "Authorization": f"Bearer {KEY}",
            "Content-Type": "application/json"}
