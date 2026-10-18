@@ -1,0 +1,22 @@
+name: quotex-probe
+on:
+  workflow_dispatch:
+  push:
+    paths: [.github/workflows/quotex-probe.yml]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: ws handshake probe
+        run: |
+          for h in "ws2.quotex.com" "ws.quotex.com"; do
+            echo "=== $h"
+            code=$(curl -s -o /tmp/probe_body.txt -w "%{http_code}" --max-time 20 \
+              -H "Connection: Upgrade" -H "Upgrade: websocket" \
+              -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
+              -H "Sec-WebSocket-Version: 13" \
+              -H "Origin: https://quotex.com" -H "Cookie: lang=pt" \
+              -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36" \
+              "https://${h}/socket.io/?EIO=3&transport=websocket" || true)
+            echo "HTTP $code"; head -c 200 /tmp/probe_body.txt; echo
+          done
