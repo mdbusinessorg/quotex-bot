@@ -176,6 +176,19 @@ async function brokerConnect() {
   $("connMsg").style.color = r.ok ? "var(--g)" : "var(--r)";
 }
 
+async function poConnect() {
+  $("poMsg").textContent = "A guardar SSID...";
+  const r = await api("/api/broker/po-connect", { ssid: $("poSsid").value });
+  $("poMsg").textContent = r.ok ? "SSID guardado — o relay liga já à Pocket Option." : "Falhou: " + (r.msg || r.error);
+  $("poMsg").style.color = r.ok ? "var(--g)" : "var(--r)";
+}
+
+async function poDisconnect() {
+  const r = await api("/api/broker/po-disconnect", {});
+  $("poMsg").textContent = r.ok ? "Pocket Option desligada." : "Falhou.";
+  $("poMsg").style.color = r.ok ? "var(--g)" : "var(--r)";
+}
+
 
 function renderStrats() {
   api("/api/history/stats").then(st => {

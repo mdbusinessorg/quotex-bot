@@ -90,6 +90,46 @@ async def feed_get():
         return {}
 
 
+async def po_feed_get():
+    """Lê candles da Pocket Option escritos pelo po-relay em bot_kv
+    (k="po:<asset>", v=JSON {candles, t, price}).
+    Devolve {asset: {"candles": [...], "updated_at": str}}."""
+    if not enabled():
+        return {}
+    def _r():
+        return _req("GET", "bot_kv?k=like.po%3A*&select=k,v") or []
+    try:
+        rows = await asyncio.to_thread(_r)
+        out = {}
+        for r in rows:
+            k = r.get("k") or ""
+            if not k.startswith("po:"):
+                continue
+            try:
+                v = json.loads(r["v"]) if isinstance(r.get("v"), str) else r.get("v")
+            except Exception:
+                continue
+            if isinstance(v, dict) and v.get("candles"):
+                out[k[3:]] = {"candles": v["candles"], "updated_at": v.get("t", "")}
+        return out
+    except Exception as e:
+        log.warning("po_feed_get: %s", e)
+        return {}
+
+
+async def po_ssid_get():
+    """SSID da Pocket Option guardado em bot_kv.po_ssid (ou None)."""
+    if not enabled():
+        return None
+    def _r():
+        return _req("GET", "bot_kv?k=eq.po_ssid&select=v") or []
+    try:
+        rows = await asyncio.to_thread(_r)
+        return rows[0].get("v") if rows else None
+    except Exception:
+        return None
+
+
 def _req(method, path, body=None, prefer=None):
     hdr = {"apikey": KEY, "Authorization": f"Bearer {KEY}",
            "Content-Type": "application/json"}

@@ -18,7 +18,7 @@ async function api(path, body) {
 function showLogin() { $("loginScr").style.display = "flex"; $("app").style.display = "none"; }
 
 async function login() {
-  const r = await fetch("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/api/auth/login", {method: "POST",
+  const r = await fetch("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/apiauth/login", {method: "POST",
     headers: {"Content-Type": "application/json"}, body: JSON.stringify({password: $("pw").value})});
   if (!r.ok) { $("loginErr").textContent = "Password errada."; return; }
   TOK = (await r.json()).token;
@@ -29,8 +29,8 @@ async function login() {
 async function boot() {
   $("loginScr").style.display = "none";
   $("app").style.display = "flex";
-  STRATS = await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/api/strategies");
-  ASSETS = await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/api/assets");
+  STRATS = await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/apistrategies");
+  ASSETS = await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/apiassets");
   const opts = Object.entries(ASSETS).map(([k]) => `<option>${k}</option>`).join("");
   ["btAsset", "anAsset", "chAsset"].forEach(id => { $(id).innerHTML = opts; });
   const so = Object.entries(STRATS).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join("");
@@ -57,7 +57,7 @@ let _sigTs = 0;
 async function loadSignals() {
   try {
     const mc = ($("sigMinConf") && $("sigMinConf").value) || 55;
-    const r = await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/api/signals?min_conf=" + mc);
+    const r = await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/apisignals?min_conf=" + mc);
     _sigTs = r.ts || Date.now() / 1000;
     const offline = r.connected === false && !r.quotex_feed,
           nofeed = !r.quotex_feed;
@@ -71,7 +71,7 @@ async function loadSignals() {
         : nofeed ? "A obter o gráfico real da Quotex — os sinais aparecem quando os dados chegarem."
         : "A varrer os pares — sem oportunidade com vantagem neste momento (NO TRADE).";
     renderSignals(r.signals || []);
-    const st = await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/api/sigstats").catch(() => null);
+    const st = await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/apisigstats").catch(() => null);
     if (st && st.total && st.total.n) {
       const t = st.total, live = st.live || {};
       $("sigAcc").textContent =
@@ -132,7 +132,7 @@ setInterval(() => {
 async function enterManual(asset, dir, expiry) {
   const amt = parseFloat(($("sigAmount") && $("sigAmount").value) || 10);
   const exp = parseInt(($("sigExpiry") && $("sigExpiry").value) || 0) || expiry;
-  const r = await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/api/trades", {asset, amount: amt, expiry: exp, direction: dir});
+  const r = await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/apitrades", {asset, amount: amt, expiry: exp, direction: dir});
   if (r.ok) {
     refresh();
     if ((r.mode || "").toUpperCase() === "SIM")
@@ -157,7 +157,7 @@ async function setAcc(m) {
   if ($("accDemo2")) $("accDemo2").className = "b " + (m === "PRACTICE" ? "def" : "ghost");
   $("accPill").textContent = m;
   try {
-    const r = await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/api/broker/account/" + m);
+    const r = await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/apibroker/account/" + m);
     if (r && r.balance != null)
       $("connMsg").textContent = `Conta ${m === "REAL" ? "REAL" : "DEMO"} ativa — saldo $${Number(r.balance).toFixed(2)}`;
     refresh(); loadProfile();
@@ -168,7 +168,7 @@ async function setAcc(m) {
 
 async function brokerConnect() {
   $("connMsg").textContent = "A ligar...";
-  const r = await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/api/broker/connect", {
+  const r = await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/apibroker/connect", {
     email: $("qEmail").value || null, password: $("qPass").value || null,
     ssid: $("qSsid").value || null, account: ACCOUNT,
   });
@@ -176,9 +176,22 @@ async function brokerConnect() {
   $("connMsg").style.color = r.ok ? "var(--g)" : "var(--r)";
 }
 
+async function poConnect() {
+  $("poMsg").textContent = "A guardar SSID...";
+  const r = await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/apibroker/po-connect", { ssid: $("poSsid").value });
+  $("poMsg").textContent = r.ok ? "SSID guardado — o relay liga já à Pocket Option." : "Falhou: " + (r.msg || r.error);
+  $("poMsg").style.color = r.ok ? "var(--g)" : "var(--r)";
+}
+
+async function poDisconnect() {
+  const r = await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/apibroker/po-disconnect", {});
+  $("poMsg").textContent = r.ok ? "Pocket Option desligada." : "Falhou.";
+  $("poMsg").style.color = r.ok ? "var(--g)" : "var(--r)";
+}
+
 
 function renderStrats() {
-  api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/api/history/stats").then(st => {
+  api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/apihistory/stats").then(st => {
     $("stratGrid").innerHTML = Object.entries(STRATS).map(([k, v]) => {
       const s = st.by_strategy[k] || {};
       return `<div class="card"><b>${v.name}</b>
@@ -203,7 +216,7 @@ function quickBt(sid) {
 }
 
 async function runBt() {
-  const r = await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/api/backtest", {strategy: $("btStrategy").value,
+  const r = await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/apibacktest", {strategy: $("btStrategy").value,
     asset: $("btAsset").value, n_candles: parseInt($("btN").value)});
   if (!r.ok) { alert(r.error); return; }
   $("btRes").style.display = "block";
@@ -231,7 +244,7 @@ async function loadHistory() {
   if ($("hDays").value) q.set("days", $("hDays").value);
   if ($("hResult").value) q.set("result", $("hResult").value);
   if ($("hStrat").value) q.set("strategy", $("hStrat").value);
-  const rows = await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/api/trades?" + q);
+  const rows = await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/apitrades?" + q);
   $("hBody").innerHTML = rows.map(t =>
     `<tr><td>${new Date(t.ts * 1000).toLocaleString()}</td><td>${t.asset}</td>
      <td>${t.direction}</td><td>$${t.amount}</td><td>${t.strategy}</td>
@@ -241,7 +254,7 @@ async function loadHistory() {
 }
 
 async function loadAnalysis() {
-  const r = await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/api/analysis/" + $("anAsset").value);
+  const r = await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/apianalysis/" + $("anAsset").value);
   if (r.error) { $("anBody").textContent = r.error; return; }
   $("anBody").innerHTML = `
     <div class="sig">
@@ -255,7 +268,7 @@ async function loadAnalysis() {
 }
 
 async function loadKb() {
-  const kb = await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/api/knowledge");
+  const kb = await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/apiknowledge");
   $("kbBody").innerHTML = kb.map(cat =>
     `<div class="card"><b>${cat.category}</b>` +
     cat.items.map(i =>
@@ -266,7 +279,7 @@ async function loadKb() {
 
 async function refresh() {
   try {
-    const st = await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/api/status");
+    const st = await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/apistatus");
     if (st.balance != null) $("dBalance").textContent = "$" + Number(st.balance).toFixed(2);
     if (st.account && st.account !== ACCOUNT) setAcc(st.account);
     $("accPill").textContent = st.account;
@@ -305,7 +318,7 @@ async function refresh() {
 // ---------------- gráfico de candles em tempo real ----------------
 async function loadChart() {
   try {
-    const r = await api(`https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/api/candles/${$("chAsset").value}?period=${$("chPeriod").value}&n=100`);
+    const r = await api(`https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/apicandles/${$("chAsset").value}?period=${$("chPeriod").value}&n=100`);
     if (!r.candles || !r.candles.length) return;
     drawCandles(r.candles);
   } catch (e) {}
@@ -350,7 +363,7 @@ function drawCandles(cds) {
 // ---------------- padrões ----------------
 async function loadPatterns() {
   try {
-    const r = await api(`https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/api/patterns/${$("chAsset").value}?period=${$("chPeriod").value}`);
+    const r = await api(`https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/apipatterns/${$("chAsset").value}?period=${$("chPeriod").value}`);
     if (r.error) { $("patBody").innerHTML = `<div class="disc">${r.error}</div>`; return; }
     const agg = r.aggregate;
     $("patAgg").innerHTML = `<span class="pill ${agg === "call" ? "call" : agg === "put" ? "put" : "off"}">
@@ -368,7 +381,7 @@ async function loadPatterns() {
 // ---------------- AI insight ----------------
 async function loadInsight() {
   try {
-    const r = await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/api/ai/insight/" + $("anAsset").value);
+    const r = await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/apiai/insight/" + $("anAsset").value);
     $("aiText").textContent = r.text || r.error || "";
     $("aiSrc").textContent = r.source === "groq" ? "Groq AI" : "local";
   } catch (e) {}
@@ -377,7 +390,7 @@ async function loadInsight() {
 // ---------------- perfil ----------------
 async function loadProfile() {
   try {
-    const r = await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/api/profile");
+    const r = await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/apiprofile");
     $("connState").innerHTML = r.connected
       ? '<span style="color:var(--g)">● Quotex ligada</span>'
       : '<span style="color:var(--amber)">● modo SIM</span>';
@@ -399,7 +412,7 @@ async function loadProfile() {
 }
 
 async function saveRisk() {
-  await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/api/risk", {
+  await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/apirisk", {
     max_amount_per_trade: parseFloat($("rMaxTrade").value),
     max_daily_loss: parseFloat($("rDailyLoss").value),
     max_consecutive_losses: parseInt($("rConsec").value),
@@ -408,6 +421,6 @@ async function saveRisk() {
     daily_target: parseFloat($("rTarget").value),
   });
 }
-async function resumeRisk() { await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/api/risk/resume", {}); refresh(); }
+async function resumeRisk() { await api("https://noywnuafpxvxvmfkjtbh.supabase.co/functions/v1/qx-panel/apirisk/resume", {}); refresh(); }
 
 if (TOK) boot(); else showLogin();

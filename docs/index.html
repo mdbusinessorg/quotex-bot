@@ -262,6 +262,13 @@ canvas{width:100%}
         <button class="b def" style="width:100%;margin-top:14px" onclick="brokerConnect()">Ligar ao broker</button>
         <div id="connMsg" style="margin-top:8px;font-size:13px"></div>
       </div>
+      <div class="card"><b>Ligar à Pocket Option</b>
+        <label>SSID da sessão PO</label><input id="poSsid" placeholder='42["auth",{"session":"..."}] ou só o session'>
+        <div style="font-size:12px;opacity:.75;margin-top:4px">Em pocketoption.com logado: F12 → Network → WS → linha <span class="mono">socket.io</span> → Messages → copia a mensagem <span class="mono">42["auth",{...}</span>. Ou no Console: <span class="mono">copy(localStorage.ssid)</span>. Depois fecha a aba da PO (uma sessão só).</div>
+        <button class="b def" style="width:100%;margin-top:14px" onclick="poConnect()">Ligar à Pocket Option</button>
+        <button class="b ghost" style="width:100%;margin-top:8px" onclick="poDisconnect()">Desligar</button>
+        <div id="poMsg" style="margin-top:8px;font-size:13px"></div>
+      </div>
     </div>
   </div>
 </main>

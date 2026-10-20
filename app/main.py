@@ -661,15 +661,55 @@ async def _relay_warmer():
     escrita pela edge function qx-relay a cada minuto). Única fonte de
     dados reais quando a engine não consegue ligar directamente — o IP do
     Render está bloqueado pela Cloudflare, o egresso do Supabase não."""
-    import asyncio
+    import asyncio, urllib.request
     from datetime import datetime
     log = logging.getLogger("relay")
+    last_po_call = 0.0
+
+    async def _po_invoke():
+        """Chama o po-relay edge fn (escreve bot_kv po:<asset>) se houver SSID."""
+        nonlocal last_po_call
+        if not await sigstore.po_ssid_get():
+            return
+        def _c():
+            try:
+                req = urllib.request.Request(
+                    f"{sigstore.URL}/functions/v1/po-relay",
+                    headers={"Authorization": f"Bearer {sigstore.KEY}"})
+                urllib.request.urlopen(req, timeout=40).read()
+            except Exception:
+                pass
+        await asyncio.to_thread(_c)
+        last_po_call = time.time()
+
     while True:
         try:
             if not sigstore.enabled():
                 await asyncio.sleep(30); continue
+            if time.time() - last_po_call > 70:
+                asyncio.create_task(_po_invoke())
+                last_po_call = time.time()
             feed = await sigstore.feed_get()
             n = 0
+            # Pocket Option (po:<asset> em bot_kv) — fonte separada, preferida
+            # quando mais fresca que a linha quotex_feed do mesmo activo.
+            for a, row in (await sigstore.po_feed_get()).items():
+                cds = row.get("candles") or []
+                if len(cds) < 30:
+                    continue
+                try:
+                    ua = row.get("updated_at") or ""
+                    ts = datetime.fromisoformat(
+                        ua.replace("Z", "+00:00")).timestamp()
+                except Exception:
+                    ts = time.time() - 120
+                if time.time() - ts > 150:
+                    continue  # po stale — deixa a Quotex cobrir
+                ent = CANDLE_CACHE.get(a)
+                if ent and ent.get("ts", 0) >= ts:
+                    continue  # já há dados iguais/mais novos (qx directo)
+                CANDLE_CACHE[a] = {"ts": ts, "candles": cds, "src": "po"}
+                n += 1
             for a, row in feed.items():
                 cds = row.get("candles") or []
                 if len(cds) < 30:
@@ -683,6 +723,10 @@ async def _relay_warmer():
                 except Exception:
                     ts = time.time() - 120
                 ent = CANDLE_CACHE.get(a)
+                # PO fresca tem prioridade — nunca alternar fontes no mesmo activo
+                if (ent and ent.get("src") == "po"
+                        and time.time() - ent["ts"] < 150):
+                    continue
                 # engine directa fresca ganha (mesma fonte, mais granular)
                 if (ent and ent.get("src") == "quotex"
                         and time.time() - ent["ts"] < 12):
