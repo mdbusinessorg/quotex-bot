@@ -484,21 +484,52 @@ async def _sig_tracker():
         await asyncio.sleep(15)
 
 
+_EVID = {"ts": 0.0, "by_asset": {}, "by_hour": {}, "by_voter": {}}
+
+
+def _evidence_stats():
+    """WR medido por (activo, lado), hora UTC e votante — recalcula a cada 60s
+    a partir do histórico real em pinhanha_signals. É a camada que corta o
+    que a base de dados provou que perde."""
+    now = time.time()
+    if now - _EVID["ts"] < 60:
+        return _EVID
+    by_a, by_h, by_v = {}, {}, {}
+    for r in SIG_RESULTS:
+        if r.get("result") not in ("win", "loss"):
+            continue
+        won = 1 if r["result"] == "win" else 0
+        c = by_a.setdefault((r.get("asset"), r.get("signal")), [0, 0])
+        c[0] += 1
+        c[1] += won
+        h = int((r.get("emit_ts") or 0) // 3600 % 24)
+        c = by_h.setdefault(h, [0, 0])
+        c[0] += 1
+        c[1] += won
+        for v in (r.get("voters") or []):
+            c = by_v.setdefault(v, [0, 0])
+            c[0] += 1
+            c[1] += won
+    _EVID.update(ts=now, by_asset=by_a, by_hour=by_h, by_voter=by_v)
+    return _EVID
+
+
 def strat_weight(k):
-    """Peso da estratégia a partir do seu win-rate medido ao vivo.
-    <30 amostras → neutro; <45% → voto vale 0,7; ≥60% → 1,2; ≥70% → 1,4."""
-    rows = [r for r in SIG_RESULTS
-            if r.get("result") in ("win", "loss") and k in (r.get("voters") or [])]
-    n = len(rows)
-    if n < 30:
+    """Peso da estratégia pelo seu win-rate medido ao vivo.
+    ≤40% com ≥25 amostras → voto INVERTIDO (indicador sistematicamente errado
+    é informação ao contrário); <50% → não vota (ruído); ≥60% → reforçado."""
+    st = _evidence_stats()["by_voter"].get(k)
+    if not st or st[0] < 20:
         return 1.0
-    wr = sum(1 for r in rows if r["result"] == "win") / n
+    wr = st[1] / st[0]
+    if wr <= 0.40 and st[0] >= 25:
+        return -0.9
+    if wr < 0.50:
+        return 0.0
     if wr >= 0.70:
         return 1.4
     if wr >= 0.60:
         return 1.2
-    if wr < 0.45:
-        return 0.7
     return 1.0
 
 
@@ -866,18 +897,32 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
                 if not r["signal"]:
                     continue
                 w = strat_weight(k)
-                if w <= 0:
+                if w == 0:
                     continue
-                votes[r["signal"]] += w
-                confs[r["signal"]].append(r["confidence"] * w)
-                wsum[r["signal"]] += w
-                voter_keys[r["signal"]].append(k)
-                why.append(f"{st['name']}: {r['signal']} {r['confidence']}%")
+                side = r["signal"]
+                if w < 0:                   # votante medido a perder → inverte
+                    side = "put" if side == "call" else "call"
+                    w = -w
+                    why.append(f"{st['name']}: {side} {r['confidence']}% (invertido)")
+                else:
+                    why.append(f"{st['name']}: {side} {r['confidence']}%")
+                votes[side] += w
+                confs[side].append(r["confidence"] * w)
+                wsum[side] += w
+                voter_keys[side].append(k)
             sig = "call" if votes["call"] > votes["put"] else "put"
             n = sum(1 for k in voter_keys[sig])
             opp = votes["put" if sig == "call" else "call"]
             if n < 1 or votes[sig] <= opp:
                 return None
+            # veto por evidência: activo+lado e hora medidos a perder
+            ev = _evidence_stats()
+            aa = ev["by_asset"].get((a, sig))
+            if aa and aa[0] >= 15 and (aa[1] + 7.5) / (aa[0] + 15) < 0.45:
+                return None               # este activo neste lado falha — medido
+            hh = ev["by_hour"].get(int(time.time()) // 3600 % 24)
+            if hh and hh[0] >= 30 and (hh[1] + 7.5) / (hh[0] + 15) < 0.42:
+                return None               # janela horária historicamente má
             watch = n < 3  # <3 votos = em observação; 3+ = sinal pleno
             raw = int(sum(confs[sig]) / wsum[sig]) if confs[sig] else 45
 
