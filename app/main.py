@@ -830,7 +830,7 @@ async def signals_ep(min_conf: int = 50, _=Depends(auth)):
             # Só o gráfico real da Quotex gera sinais — dados Yahoo são uma
             # série de preços diferente (sobretudo OTC) e produziam sinais
             # que falhavam sistematicamente na corretora.
-            if not cached or cached.get("src") != "quotex" or \
+            if not cached or cached.get("src") not in ("quotex", "po") or \
                     time.time() - cached["ts"] >= 300:
                 return None
             cds = cached["candles"]
