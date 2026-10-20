@@ -585,6 +585,23 @@ def _merge_ticks(asset, ticks, src):
     _LAST_TICK[asset] = last
 
 
+def _roll_forming():
+    """Cria a vela do minuto actual a partir do último close — assim o sinal
+    dispara no início do minuto (expira em ~60s) em vez de esperar o próximo
+    pull do relay (~70s), que deixava os sinais nascer já expirados."""
+    b = int(time.time()) // 60 * 60
+    for ent in CANDLE_CACHE.values():
+        if ent.get("src") not in ("quotex", "po"):
+            continue
+        cds = ent.get("candles") or []
+        if not cds or int(cds[-1]["time"]) >= b:
+            continue
+        p = float(cds[-1]["close"])
+        cds.append({"time": b, "open": p, "high": p, "low": p, "close": p})
+        del cds[:-CANDLES_NEED]
+        ent["ts"] = time.time()
+
+
 async def _tick_warmer():
     """Subscreve ticks ao vivo da Quotex — o candle corrente actualiza
     a cada segundo com o preço real (inclui OTC ao fim de semana)."""
@@ -710,6 +727,9 @@ async def _relay_warmer():
                     continue  # já há dados iguais/mais novos (qx directo)
                 CANDLE_CACHE[a] = {"ts": ts, "candles": cds, "src": "po"}
                 n += 1
+            # rola a vela em formação com o último preço — o sinal dispara
+            # no início do minuto, não só quando o próximo pull chega (~70s)
+            _roll_forming()
             for a, row in feed.items():
                 cds = row.get("candles") or []
                 if len(cds) < 30:
